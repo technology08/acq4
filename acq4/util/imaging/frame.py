@@ -1,15 +1,13 @@
-from typing import Callable, Optional
-
 import numpy as np
 from MetaArray import MetaArray
 
 import pyqtgraph as pg
-from acq4.util.DataManager import FileHandle
+from acq4.util.DataManager import FileHandle, DirHandle
 from acq4.util.imaging.background import remove_background_from_image
 from pyqtgraph import SRTTransform3D, ImageItem
 
 
-class Frame(object):
+class Frame:
     """One or more frames of imaging data, including meta information.
 
     Expects *info* to be a dictionary with some minimal information:
@@ -21,7 +19,6 @@ class Frame(object):
     """
 
     def __init__(self, data, info):
-        object.__init__(self)
         self._data = data
         self._info = info
         self._bg_removal = None
@@ -58,11 +55,6 @@ class Frame(object):
         # Complete transform maps from image coordinates to global.
         if 'transform' not in frame.info():
             frame.addInfo(transform=SRTTransform3D(frame.deviceTransform() * frame.frameTransform()))
-
-    def asarray(self):
-        """Assuming this frame object represents multiple frames, return an array with one Frame per frame
-        """
-        return [Frame(frame, self.info().copy()) for frame in self.data()]
 
     def data(self):
         """Return raw imaging data.
@@ -114,37 +106,56 @@ class Frame(object):
 
     @property
     def depth(self):
-        return self.mapFromFrameToGlobal(pg.Vector(0, 0, 0)).z()
+        return self.globalPosition[2]
 
-    def saveImage(self, dh, filename=None, appendTo=None, appendAxis=None, autoIncrement=True):
+    @property
+    def globalPosition(self):
+        return self.mapFromFrameToGlobal(np.array((0.0, 0.0, 0.0)))
+
+    def _metaArrayInfo(self):
+        return [
+            {
+                'name': 'Time',
+                'values': [self.time],
+                'globalPosition': self.globalPosition.reshape((1, 3)),
+            },
+            {'name': 'X'},
+            {'name': 'Y'},
+        ]
+
+    _metaArrayWriteKwargs = {'appendAxis': 'Time', 'appendKeys': ['globalPosition']}
+
+    def appendImage(self, fh: FileHandle) -> FileHandle:
+        # TODO should we be appending contrast?
+        data = self.getImage()
+        data = MetaArray(data[np.newaxis, ...], info=self._metaArrayInfo())
+        data.write(fh.name(), **self._metaArrayWriteKwargs)
+        return fh
+
+    def saveImage(self, dh: DirHandle, filename: str, autoIncrement=True) -> FileHandle:
         """Save this frame data to *filename* inside DirHandle *dh*.
 
         The file name must end with ".ma" (for MetaArray) or any supported image file extension.
 
         If *appendTo* is not None, the file will be appended to *appendTo* along the *appendAxis*, which
-        value we will supply from this object (e.g. "Depth" goes to `self.depth`).
+        value you must also supply as *valuesForAppend*.
         """
         data = self.getImage()
         info = self.info()
         if callable(info.get('backgroundInfo')):
             info['backgroundInfo'] = info['backgroundInfo'](dh)
-        if filename and not filename.endswith('.ma'):
+
+        if not filename.endswith('.ma'):
             return dh.writeFile(data, filename, info, fileType="ImageFile", autoIncrement=autoIncrement)
 
-        if appendAxis:
-            array_info = [
-                {'name': appendAxis, 'values': [getattr(self, appendAxis.lower())]},
-                {'name': 'X'},
-                {'name': 'Y'},
-            ]
-            data = MetaArray(data[np.newaxis, ...], info=array_info)
-
-            if appendTo:
-                data.write(appendTo.name(), appendAxis=appendAxis)
-                return appendTo
-
+        data = MetaArray(data[np.newaxis, ...], info=self._metaArrayInfo())
         return dh.writeFile(
-            data, filename, info, fileType="MetaArray", autoIncrement=autoIncrement, appendAxis=appendAxis
+            data,
+            filename,
+            info,
+            fileType="MetaArray",
+            autoIncrement=autoIncrement,
+            **self._metaArrayWriteKwargs,
         )
 
     def loadLinkedFiles(self, dh):
