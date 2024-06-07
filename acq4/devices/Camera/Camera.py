@@ -79,9 +79,7 @@ class Camera(DAQGeneric, OptomechDevice):
             self.camConfig["scaleFactor"] = [1.0, 1.0]
 
         # Default values for scope state. These will be used if there is no scope defined.
-        self.scopeState = {
-            "id": 0,
-        }
+        self.scopeState = {}
 
         self.scopeDev = None
         p = self
@@ -103,6 +101,7 @@ class Camera(DAQGeneric, OptomechDevice):
         tr = pg.SRTTransform3D()
         tr.translate(-self.sensorSize[0] * 0.5, -self.sensorSize[1] * 0.5)
         self.setDeviceTransform(self.deviceTransform() * tr)
+        self._frameInfoUpdater = None
 
         self.acqThread = AcquireThread(self)
         self.acqThread.finished.connect(self.acqThreadFinished)
@@ -112,9 +111,7 @@ class Camera(DAQGeneric, OptomechDevice):
         self._processingThread = FrameProcessingThread()
         self._processingThread.sigFrameFullyProcessed.connect(self.sigNewFrame)
         self._processingThread.start()
-        self.addFrameProcessor(self.addFrameInfo)
-        self.addFrameProcessor(Frame.ensureTransform)  # order matters because the transform likely comes from addFrameInfo
-        self.acqThread.sigRawFrameAcquired.connect(self._processingThread.handleNewRawFrame)
+        self._processingThread.addFrameProcessor(self.addFrameInfo)
 
         self.sigGlobalTransformChanged.connect(self.transformChanged)
 
@@ -140,26 +137,37 @@ class Camera(DAQGeneric, OptomechDevice):
         return self.parentDevices()
 
     def addFrameInfo(self, frame: Frame):
-        # TODO cache this more, maybe?
-        scope_state = self.getScopeState()
-        ps = scope_state["pixelSize"]  # size of CCD pixel
-        transform = pg.SRTTransform3D(scope_state["transform"])
-        cam_params = {"binning", "exposure", "region", "triggerMode"}
-        info = frame.info().copy()
-        if cam_params - info.keys():
-            info.update(dict(self.getParams(cam_params)))
-        binning = info["binning"]
-        info.update({
-            "deviceName": self.name(),
-            "pixelSize": [ps[0] * binning[0], ps[1] * binning[1]],  # size of image pixel
-            "objective": scope_state.get("objective", None),
-            "deviceTransform": transform,
-            "illumination": scope_state.get("illumination", None),
-        })
-        tr = self.makeFrameTransform(info["region"], info["binning"])
-        info["frameTransform"] = tr
+        if self._frameInfoUpdater is None:
+            self._frameInfoUpdater = self._makeFrameInfoUpdater(frame.info().copy())
+        self._frameInfoUpdater(frame)
 
-        frame.addInfo(info)
+    def _makeFrameInfoUpdater(self, templateInfo):
+        scope_state = self.getScopeState()
+        dev_xform = pg.SRTTransform3D(scope_state["transform"])
+        ps = scope_state["pixelSize"]  # size of CCD pixel
+
+        def _update(frame):
+            info = frame.info().copy()
+
+            cam_params = {"binning", "exposure", "region", "triggerMode"}
+            if cam_params - info.keys():
+                info.update(dict(self.getParams(cam_params)))
+
+            binning = info["binning"]
+            frame_xform = self.makeFrameTransform(info["region"], binning)
+            new_info = {
+                "deviceName": self.name(),
+                "pixelSize": [ps[0] * binning[0], ps[1] * binning[1]],  # size of image pixel
+                "objective": scope_state.get("objective", None),
+                "deviceTransform": dev_xform,
+                "illumination": scope_state.get("illumination", None),
+                "frameTransform": frame_xform,
+                "transform": SRTTransform3D(dev_xform * frame_xform),
+            }
+
+            frame.addInfo(new_info)
+
+        return _update
 
     def setupCamera(self):
         """Prepare the camera at least so that get/setParams will function correctly"""
@@ -352,7 +360,11 @@ class Camera(DAQGeneric, OptomechDevice):
         if hasattr(self, "acqThread") and self.isRunning():
             self.stop()
             if not self.wait(10000):
-                raise Exception("Timed out while waiting for thread exit!")
+                raise TimeoutError("Timed out while waiting for acquisition thread to exit!")
+        if hasattr(self, "_processingThread") and self._processingThread.isRunning():
+            self._processingThread.stop()
+            if not self._processingThread.wait(10000):
+                raise TimeoutError("Timed out waiting for frame processing thread to stop")
         DAQGeneric.quit(self)
 
     @Future.wrap
@@ -431,14 +443,14 @@ class Camera(DAQGeneric, OptomechDevice):
         with self.lock:
             return self.scopeState
 
-    def transformChanged(self):  # called then this device's global transform changes.
+    def transformChanged(self):  # called when this device's global transform changes.
         prof = Profiler(disabled=True)
         self.scopeState["transform"] = self.globalTransform()
         o = Vector(self.scopeState["transform"].map(Vector(0, 0, 0)))
         p = Vector(self.scopeState["transform"].map(Vector(1, 1)) - o)
         self.scopeState["centerPosition"] = o
         self.scopeState["pixelSize"] = np.abs(p)
-        self.scopeState["id"] += 1  # hint to acquisition thread that state has changed
+        self._frameInfoUpdater = None
 
     def globalCenterPosition(self, mode="sensor"):
         """Return the global position of the center of the camera sensor (mode='sensor') or ROI (mode='roi').
@@ -486,14 +498,14 @@ class Camera(DAQGeneric, OptomechDevice):
             obj, oldObj = obj
         with self.lock:
             self.scopeState["objective"] = obj.name()
-            self.scopeState["id"] += 1
+            self._frameInfoUpdater = None
 
     def _lightChanged(self):
         with self.lock:
             if self.scopeDev.lightSource is None:
                 return
             self.scopeState["illumination"] = self.scopeDev.lightSource.describe()
-            self.scopeState["id"] += 1
+            self._frameInfoUpdater = None
 
     @staticmethod
     def makeFrameTransform(region, binning):
@@ -810,6 +822,7 @@ class FrameProcessingThread(Thread):
 
     def __init__(self):
         super().__init__()
+        self._stop = False
         self._processors = []
         self._final_processor = None
         self._queue = queue.Queue()
@@ -822,6 +835,9 @@ class FrameProcessingThread(Thread):
         else:
             self._processors.append(processor)
 
+    def stop(self):
+        self._stop = True
+
     @property
     def processors(self):
         if self._final_processor is not None:
@@ -832,12 +848,10 @@ class FrameProcessingThread(Thread):
         self._queue.put(frame)
 
     def run(self):
-        while True:
+        while not self._stop:
             try:
-                frame = self._queue.get_nowait()
+                frame = self._queue.get(timeout=0.1)
             except queue.Empty:
-                time.sleep(0.01)
-                # TODO check for halt?
                 continue
             for callback in self.processors:
                 try:
@@ -848,7 +862,6 @@ class FrameProcessingThread(Thread):
 
 
 class AcquireThread(Thread):
-    sigRawFrameAcquired = Qt.Signal(object)
     sigShowMessage = Qt.Signal(object)
 
     def __init__(self, dev: Camera):
@@ -917,8 +930,8 @@ class AcquireThread(Thread):
                         frameInfo = info.copy()
                         data = frame.pop("data")
                         frameInfo.update(frame)  # copies 'time' key supplied by camera
-                        out = Frame(data, frameInfo)
-                        self.sigRawFrameAcquired.emit(out)
+                        f = Frame(data, frameInfo)
+                        self.dev._processingThread.handleNewRawFrame(f)
 
                     lastFrameTime = now
                     lastFrameId = frames[-1]["id"]
