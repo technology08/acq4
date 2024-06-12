@@ -100,7 +100,7 @@ installExceptionHandler()
 ## (see pyqtgraph.util.garbage_collector for more information)
 from pyqtgraph.util.garbage_collector import GarbageCollector
 
-gc = GarbageCollector(interval=1.0, debug=False)
+#gc = GarbageCollector(interval=1.0, debug=False)
 
 ## Create Manager. This configures devices and creates the main manager window.
 man = Manager(argv=sys.argv[1:])
