@@ -1,12 +1,13 @@
 import glob
 import os
 import sys
+import threading
 
 # singleton MMCorePy instance
 _mmc = None
 
 # default location to search for micromanager
-microManagerPaths = glob.glob("C:\\Program Files\Micro-Manager*")
+microManagerPaths = glob.glob("C:\\Program Files\Micro-Manager-2.0")
 
 
 def versionWarning():
@@ -46,11 +47,9 @@ class MMCWrapper:
                 else:
                     msg = exc
                 raise MicroManagerError(f"{msg} (calling mmc.{name} with args {args} {kwds})") from exc
-
         fn.__name__ = name + "_wrapped"
         self.__wrapper_cache[name] = fn
         return fn
-
 
 def getMMCorePy(path=None):
     """Return a singleton MMCorePy instance that is shared by all devices for accessing micromanager.

@@ -126,7 +126,7 @@ class Manager(Qt.QObject):
             ## Handle command line options
             loadModules = []
             setBaseDir = None
-            setStorageDir = None
+            setStorageDir = "C:\\Users\\LabPC-SICM\\Documents\\Connor\\acq4-storage\\"
             loadManager = True
             loadConfigs = []
             for o, a in opts:
