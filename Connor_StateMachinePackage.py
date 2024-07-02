@@ -1,4 +1,4 @@
-from Connor_config import Workbench
+from Workbench import Workbench
 from statemachine import StateMachine, State
 from statemachine.contrib.diagram import DotGraphMachine
 

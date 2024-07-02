@@ -1,4 +1,4 @@
-from Connor_config import *
+from Workbench import *
 import threading
 import queue
 from matplotlib.animation import FuncAnimation

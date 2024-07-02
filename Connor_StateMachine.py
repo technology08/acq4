@@ -1,4 +1,4 @@
-from Connor_config import Workbench
+from Workbench import Workbench
 import time
 
 class State(object):
