@@ -128,8 +128,8 @@ class Workbench:
             plt.imshow(frame, interpolation='nearest')
             plt.title(title)
             plt.show()
-    # Move Manipulator
 
+    # Move Manipulator
     def moveManipulatorOnAxis(self, axis, val, speed, displayResults=False):
         pos1 = self.ps.getPos()
         pos2 = [None, None, None]
@@ -166,7 +166,6 @@ class Workbench:
 
         return data
 
-
     def contDAQReadTest():
         print("::::::::::::::::::  Continuous Read Test  :::::::::::::::::::::")
         task = n.createTask()
@@ -183,13 +182,10 @@ class Workbench:
 
         return data
 
-
     # DAQ it
-
     def voltageClamp(self):
         print("Switching to VC on MC")
         self.clamp.setMode('VC')
-
 
     def setDAQOutput(self, val, hold=0.0):
         print("Changing ao0 to ", val, "V")
@@ -229,15 +225,9 @@ class Workbench:
         task1.CreateAIVoltageChan("/Dev1/ai9", "", n.Val_Cfg_Default, -10.0, 10.0, n.Val_Volts, None)
         task1.CfgSampClkTiming("/Dev1/ao/SampleClock", 10000.0, n.Val_Rising, n.Val_FiniteSamps, samples)
 
-        #task3 = n.createTask()
-        #task3.CreateAIVoltageChan("/Dev1/ai9", "", n.Val_RSE, -10.0, 10.0, n.Val_Volts, None)
-        #task3.CfgSampClkTiming("/Dev1/ao/SampleClock", 10000.0, n.Val_Rising, n.Val_FiniteSamps, samples)
-
         task2 = n.createTask()
         task2.CreateAOVoltageChan("/Dev1/ao0", "", -10.0, 10.0, n.Val_Volts, None)
-        # task2.CfgSampClkTiming(None, 10000.0, nidaq.Val_Rising, nidaq.Val_FiniteSamps, 1000)
         task2.CfgSampClkTiming(None, 10000.0, n.Val_Rising, n.Val_FiniteSamps, samples)
-        # task2.CfgDigEdgeStartTrig("ai/StartTrigger", nidaq.Val_Rising)
 
         data1 = np.zeros((samples), dtype=np.float64)
         data1[int(.1*samples):int(.2*samples)] = peak
@@ -249,14 +239,10 @@ class Workbench:
         print("  Wrote ao samples:", task2.write(data1))
         task1.start()
         task2.start()
-        #task3.start()
 
         data2 = task1.read()
-        #data3 = task3.read()
-        # time.sleep(1.0)
         task1.stop()
         task2.stop()
-        #task3.stop()
 
         print("  Data acquired:", data2[0].shape)
         return data1, data2
@@ -282,10 +268,6 @@ class Workbench:
         self.readingTask.stop()
         self.writingTask.stop()
 
-    def stopTasksInTime(self, time):
-        time.sleep(time)
-        self.stopTasks()
-
     def sendOnePulse(self, peak, offset, frequency):
         period = 1 / frequency
         samples = int(period * self.CYCLES_PER_SECOND)
@@ -293,9 +275,6 @@ class Workbench:
         data1 = np.zeros((samples), dtype=np.float64)
         data1[int(samples / 2):samples] = peak
         data1 += offset
-
-        #if self.writingTask is None and self.readingTask is None: 
-        #    self.configureTasks(period)
         
         self.writingTask.write(data1)
         output = self.readingTask.read()
@@ -303,7 +282,6 @@ class Workbench:
         return output
     
     def sendPulse(self, peak, offset, period):
-
 
         samples = int(period * self.CYCLES_PER_SECOND)
 
@@ -317,23 +295,51 @@ class Workbench:
         task2.CfgSampClkTiming(None, self.CYCLES_PER_SECOND, n.Val_Rising, n.Val_FiniteSamps, samples)
 
         data1 = np.zeros((samples), dtype=np.float64)
-        #data1[int(samples / 4 - 1):int(samples / 2 - 1)] = peak
+
         data1[int(samples / 4 - 1):int(samples * 3 / 4 -1)] = peak
         data1 += offset
-        #print("  Wrote ao samples:",)
+
         task2.write(data1)
         task1.start()
         task2.start()
-        #task3.start()
 
         data2 = task1.read()
-        #data3 = task3.read()
-        # time.sleep(1.0)
         task1.stop()
         task2.stop()
-        #task3.stop()
 
-        #print("  Data acquired:", data2[0].shape)
         return data1, data2
+    
+    def calculateResistance(self, voltage_sent, current_read, periods_in_data):
+        samples = len(current_read)
+        sample_per_iter = int(samples / periods_in_data)
+        resistances = []
+        # Look 18% and 28% of the way thru
+        for i in range(periods_in_data): # five periods, change this later
+            voltage_high = voltage_sent[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.9 * sample_per_iter)]
+            voltage_low =  voltage_sent[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.4 * sample_per_iter)]
+            current_high = current_read[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.9 * sample_per_iter)]
+            current_low =  current_read[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.4 * sample_per_iter)]
 
-# DAQmxRegisterEveryNSamplesEvent (TaskHandle task, int32 everyNsamplesEventType, uInt32 nSamples, uInt32 options, DAQmxEveryNSamplesEventCallbackPtr callbackFunction, void *callbackData);
+            resistance = (voltage_high - voltage_low) / (current_high - current_low)
+            resistances.append(abs(resistance))
+
+        return resistances
+    
+    def configureVoltageClamp(self):
+        self.voltageClamp()
+        self.clamp.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
+        self.clamp.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
+
+    def measureResistance(self, frequency):
+        period = 1 / frequency
+
+        _, voltage_data = self.sendPulse(1, 1, period)
+        
+        voltage_sent = voltage_data[0][1]
+        voltage_read = voltage_data[0][0]
+
+        voltage_sent = voltage_sent * self.clamp.getState()['secondaryScaleFactor']
+        current_read = voltage_read * self.clamp.getState()['primaryScaleFactor']
+
+        resistances = self.calculateResistance(voltage_sent, current_read, 1)
+        return [resistance / 1e6 for resistance in resistances]
