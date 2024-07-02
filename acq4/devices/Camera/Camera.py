@@ -130,8 +130,8 @@ class Camera(DAQGeneric, OptomechDevice):
             dev = dm.getDevice(preset["hotkey"]["device"])
             key = preset["hotkey"]["key"]
             dev.addKeyCallback(key, self.presetHotkeyPressed, (presetName,))
-
-        dm.declareInterface(name, ["camera"], self)
+        if dm is not None:
+            dm.declareInterface(name, ["camera"], self)
 
     def devicesToReserve(self) -> list[Device]:
         return self.parentDevices()

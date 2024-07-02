@@ -126,7 +126,7 @@ class Manager(Qt.QObject):
             ## Handle command line options
             loadModules = []
             setBaseDir = None
-            setStorageDir = "C:\\Users\\LabPC-SICM\\Documents\\Connor\\acq4-storage\\"
+            setStorageDir = None
             loadManager = True
             loadConfigs = []
             for o, a in opts:
@@ -867,7 +867,8 @@ class Manager(Qt.QObject):
 # All other modules can use this function to get the manager instance
 def getManager() -> Manager:
     if Manager.single is None:
-        raise Exception("No manager created yet")
+        #raise Exception("No manager created yet")
+        return None
     return Manager.single
 
 

@@ -5,6 +5,8 @@ import sys
 import numpy as np
 import threading
 from typing import Tuple
+import os
+from pyqtgraph import configfile
 
 import pyqtgraph as pg
 from acq4.util import Qt, ptime
@@ -105,11 +107,32 @@ class Stage(Device, OptomechDevice):
         for jsdev in jsdevs:
             jsdev.sigStateChanged.connect(self.joystickChanged)
 
-        dm.declareInterface(name, ['stage'], self)
+        if dm is not None:
+            dm.declareInterface(name, ['stage'], self)
 
     def quit(self):
         self.stop()
 
+    def readConfigFile(self, fileName, missingOk=True):
+        fileName = self.configFileName(fileName)
+        if os.path.isfile(fileName):
+            return configfile.readConfigFile(fileName)
+        else:
+            if missingOk:
+                return {}
+            else:
+                raise Exception('Config file "%s" not found.' % fileName)
+    
+    def configFileName(self, name):
+        from acq4 import CONFIGPATH
+        for path in CONFIGPATH:
+            cf = os.path.join(path, 'default.cfg')
+            if os.path.isfile(cf):
+                self.configDir = os.path.dirname(cf)
+                return os.path.join(self.configDir, name)
+            
+        raise FileNotFoundError(f"Could not find default.cfg file in any of: {CONFIGPATH}")  
+        
     def axes(self) -> Tuple[str]:
         """Return a tuple of axis names implemented by this device, like ('x', 'y', 'z').
 
@@ -436,7 +459,8 @@ class Stage(Device, OptomechDevice):
         if speed <= 0:
             raise ValueError("Speed must be greater than 0")
         if len(self.axes()) != len(position):
-            raise ValueError(f"Position {position} should have length {len(self.axes())}")
+            #raise ValueError(f"Position {position} should have length {len(self.axes())}")
+            print(f"Position {position} should have length {len(self.axes())}")
         self.checkLimits(position)
 
     def _move(self, pos, speed, linear, **kwds) -> Future:
@@ -551,6 +575,8 @@ class Stage(Device, OptomechDevice):
                 raise ValueError(f"Position requested for device {self.name()} exceeds limits: {stagePos} {ax_name} axis < {limit[0]}")
             if limit[1] is not None and x > limit[1]:
                 raise ValueError(f"Position requested for device {self.name()} exceeds limits: {stagePos} {ax_name} axis > {limit[1]}")
+
+    
 
     def homePosition(self):
         """Return the stored home position of this stage in global coordinates.

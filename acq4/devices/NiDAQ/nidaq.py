@@ -33,7 +33,7 @@ class NiDAQ(Device):
     
     def createTask(self, cmd, parentTask):
         return Task(self, cmd, parentTask)
-        
+
     def setChannelValue(self, chan, value, block=False, delaySetIfBusy=False, ignoreLock=False):
         """Set a channel on this DAQ. 
         Arguments:

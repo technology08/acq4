@@ -24,7 +24,8 @@ class Module(Qt.QObject):
         self.name = name
         self.manager = manager
         self.config = config
-        manager.declareInterface(name, ['module'], self)
+        if manager is not None:
+            manager.declareInterface(name, ['module'], self)
 
     def window(self):
         """Return the Qt window for this module"""

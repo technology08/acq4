@@ -531,6 +531,7 @@ class DirHandle(FileHandle):
             else:
                 fullName = name
             newDir = os.path.join(self.path, fullName)
+            
             if os.path.isdir(newDir):
                 raise Exception(f"Directory {newDir} already exists.")
 

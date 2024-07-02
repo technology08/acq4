@@ -1,0 +1,73 @@
+.:
+image_000.tif:
+    binning: (4, 4)
+    exposure: 0.010007
+    region: [0, 0, 2048, 2048]
+    triggerMode: 'Normal'
+    fps: 103.78087343807992
+    time: 1719336041.035296
+    id: 1385
+    deviceName: 'Camera'
+    pixelSize: [5.191192030906677e-06, 5.191192030906677e-06]
+    objective: '5x 0.25na FLUAR'
+    deviceTransform: {'pos': (-0.001328924554400146, 0.001328924554400146, 0.0), 'scale': (1.2977778851563926e-06, -1.2977778851563926e-06, 1.0), 'angle': -0.0, 'axis': (0, 0, 1)}
+    illumination: None
+    frameTransform: {'pos': (0.0, 0.0, 0.0), 'scale': (4.0, 4.0, 1.0), 'angle': 0.0, 'axis': (0, 0, 1)}
+    transform: {'pos': (-0.001328924554400146, 0.001328924554400146, 0.0), 'scale': (5.19111154062557e-06, -5.19111154062557e-06, 1.0), 'angle': -0.0, 'axis': (0, 0, 1)}
+    backgroundInfo: None
+    contrastInfo:
+        levels: (1518.488582588875, 1687.2282742395532)
+        gradient:
+            mode: 'rgb'
+            ticks: [(0.0, (0, 0, 0, 255)), (1.0, (255, 255, 255, 255))]
+            ticksVisible: True
+    __object_type__: 'ImageFile'
+    __timestamp__: 1719336134.6880977
+image_001.tif:
+    binning: (4, 4)
+    exposure: 0.010007
+    region: [0, 0, 2048, 2048]
+    triggerMode: 'Normal'
+    fps: 103.78087343807992
+    time: 1719336041.035296
+    id: 1385
+    deviceName: 'Camera'
+    pixelSize: [5.191192030906677e-06, 5.191192030906677e-06]
+    objective: '5x 0.25na FLUAR'
+    deviceTransform: {'pos': (-0.001328924554400146, 0.001328924554400146, 0.0), 'scale': (1.2977778851563926e-06, -1.2977778851563926e-06, 1.0), 'angle': -0.0, 'axis': (0, 0, 1)}
+    illumination: None
+    frameTransform: {'pos': (0.0, 0.0, 0.0), 'scale': (4.0, 4.0, 1.0), 'angle': 0.0, 'axis': (0, 0, 1)}
+    transform: {'pos': (-0.001328924554400146, 0.001328924554400146, 0.0), 'scale': (5.19111154062557e-06, -5.19111154062557e-06, 1.0), 'angle': -0.0, 'axis': (0, 0, 1)}
+    backgroundInfo: None
+    contrastInfo:
+        levels: (1518.488582588875, 1687.2282742395532)
+        gradient:
+            mode: 'rgb'
+            ticks: [(0.0, (0, 0, 0, 255)), (1.0, (255, 255, 255, 255))]
+            ticksVisible: True
+    __object_type__: 'ImageFile'
+    __timestamp__: 1719336150.2811599
+image_002.tif:
+    binning: (4, 4)
+    exposure: 0.010007
+    region: [0, 0, 2048, 2048]
+    triggerMode: 'Normal'
+    fps: 100.09316533027874
+    time: 1719337282.7288296
+    id: 9458
+    deviceName: 'Camera'
+    pixelSize: [5.191192030906677e-06, 5.191192030906677e-06]
+    objective: '5x 0.25na FLUAR'
+    deviceTransform: {'pos': (-0.001328924554400146, 0.001328924554400146, 0.0), 'scale': (1.2977778851563926e-06, -1.2977778851563926e-06, 1.0), 'angle': -0.0, 'axis': (0, 0, 1)}
+    illumination: None
+    frameTransform: {'pos': (0.0, 0.0, 0.0), 'scale': (4.0, 4.0, 1.0), 'angle': 0.0, 'axis': (0, 0, 1)}
+    transform: {'pos': (-0.001328924554400146, 0.001328924554400146, 0.0), 'scale': (5.19111154062557e-06, -5.19111154062557e-06, 1.0), 'angle': -0.0, 'axis': (0, 0, 1)}
+    backgroundInfo: None
+    contrastInfo:
+        levels: (1522.9879640053355, 1693.815304397457)
+        gradient:
+            mode: 'rgb'
+            ticks: [(0.0, (0, 0, 0, 255)), (1.0, (255, 255, 255, 255))]
+            ticksVisible: True
+    __object_type__: 'ImageFile'
+    __timestamp__: 1719337285.6868753

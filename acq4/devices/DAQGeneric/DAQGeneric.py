@@ -119,9 +119,10 @@ class DAQGeneric(Device):
                 self.setChanHolding(ch, config[ch]['holding'])
             # self._DGHolding[ch] = config[ch]['holding']
 
-        dm.declareInterface(name, ['daqChannelGroup'], self)
-        for ch in config:
-            dm.declareInterface(name + "." + ch, ['daqChannel'], ChannelHandle(self, ch))
+        if dm is not None:
+            dm.declareInterface(name, ['daqChannelGroup'], self)
+            for ch in config:
+                dm.declareInterface(name + "." + ch, ['daqChannel'], ChannelHandle(self, ch))
 
     def mapToDAQ(self, channel, data):
         mapping = self.getMapping(chans=[channel])

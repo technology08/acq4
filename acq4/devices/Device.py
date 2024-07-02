@@ -31,7 +31,8 @@ class Device(InterfaceMixin, Qt.QObject):  # QObject calls super, which is disas
         self._lock_ = Mutex(Qt.QMutex.Recursive)
         self._lock_tb_ = None
         self.dm = deviceManager
-        self.dm.declareInterface(name, ['device'], self)
+        if self.dm is not None:
+            self.dm.declareInterface(name, ['device'], self)
         Device._deviceCreationOrder.append(Weakref(self))
         self._name = name
             
@@ -170,7 +171,8 @@ class DeviceTask(object):
         operating synchronously.
         """
         self.dev = dev
-        self.__parentTask = Weakref(parentTask)
+        if parentTask is not None:
+            self.__parentTask = Weakref(parentTask)
         
     def parentTask(self):
         return self.__parentTask()

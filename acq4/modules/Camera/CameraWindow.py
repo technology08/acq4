@@ -57,24 +57,25 @@ class CameraWindow(Qt.QMainWindow):
 
         # search for all devices that provide a cameraModuleInterface() method
         man = Manager.getManager()
-        devices = [man.getDevice(dev) for dev in man.listDevices()]
-        ifaces = OrderedDict(
-            [(dev.name(), dev.cameraModuleInterface(self)) for dev in devices if hasattr(dev, "cameraModuleInterface")]
-        )
+        if man is not None:
+            devices = [man.getDevice(dev) for dev in man.listDevices()]
+            ifaces = OrderedDict(
+                [(dev.name(), dev.cameraModuleInterface(self)) for dev in devices if hasattr(dev, "cameraModuleInterface")]
+            )
 
-        # add each device's control panel in ots own dock
-        haveDevs = False
-        for dev, iface in ifaces.items():
-            if iface is not None:
-                haveDevs = True
-                self.addInterface(dev, iface)
+            # add each device's control panel in ots own dock
+            haveDevs = False
+            for dev, iface in ifaces.items():
+                if iface is not None:
+                    haveDevs = True
+                    self.addInterface(dev, iface)
 
-        # Add explanatory label if no devices were found
-        if not haveDevs:
-            label = Qt.QLabel("No imaging devices available")
-            label.setAlignment(Qt.Qt.AlignHCenter | Qt.Qt.AlignVCenter)
-            dock = dockarea.Dock(name="nocamera", widget=label, size=(100, 500), hideTitle=True)
-            self.cw.addDock(dock, "left", self.gvDock)
+            # Add explanatory label if no devices were found
+            if not haveDevs:
+                label = Qt.QLabel("No imaging devices available")
+                label.setAlignment(Qt.Qt.AlignHCenter | Qt.Qt.AlignVCenter)
+                dock = dockarea.Dock(name="nocamera", widget=label, size=(100, 500), hideTitle=True)
+                self.cw.addDock(dock, "left", self.gvDock)
 
         # Add a dock with ROI buttons and plot
         self.roiWidget = ROIPlotter(self)
@@ -100,7 +101,8 @@ class CameraWindow(Qt.QMainWindow):
         self.tLabel = Qt.QLabel()
         self.vLabel = Qt.QLabel()
         self.vLabel.setFixedWidth(50)
-        self.setStatusBar(StatusBar())
+        if man is not None:
+            self.setStatusBar(StatusBar())
         font = self.xyLabel.font()
         font.setPointSize(8)
         labels = [self.recLabel, self.xyLabel, self.rgnLabel, self.tLabel, self.vLabel]
@@ -110,15 +112,16 @@ class CameraWindow(Qt.QMainWindow):
 
         # Load previous window state
         self.stateFile = os.path.join("modules", self.module.name + "_ui.cfg")
-        uiState = module.manager.readConfigFile(self.stateFile)
-        if "geometry" in uiState:
-            geom = Qt.QRect(*uiState["geometry"])
-            self.setGeometry(geom)
-        if "window" in uiState:
-            ws = Qt.QByteArray.fromPercentEncoding(uiState["window"].encode())
-            self.restoreState(ws)
-        if "docks" in uiState:
-            self.cw.restoreState(uiState["docks"], missing="ignore")
+        if man is not None:
+            uiState = module.manager.readConfigFile(self.stateFile)
+            if "geometry" in uiState:
+                geom = Qt.QRect(*uiState["geometry"])
+                self.setGeometry(geom)
+            if "window" in uiState:
+                ws = Qt.QByteArray.fromPercentEncoding(uiState["window"].encode())
+                self.restoreState(ws)
+            if "docks" in uiState:
+                self.cw.restoreState(uiState["docks"], missing="ignore")
 
         # done with UI
         self.show()
@@ -310,7 +313,10 @@ class CameraModuleInterface(Qt.QObject):
 
     def __init__(self, dev, mod):
         Qt.QObject.__init__(self)
-        self.mod = weakref.ref(mod)
+        if mod is not None:
+            self.mod = weakref.ref(mod)
+        else:
+            self.mod = None
         self.dev = weakref.ref(dev)
         self._hasQuit = False
 
@@ -362,7 +368,8 @@ class CameraModuleInterface(Qt.QObject):
             scene = item.scene()
             if scene is not None:
                 scene.removeItem(item)
-        self.mod().window()._removeInterface(self)
+        if self.mod is not None:
+            self.mod().window()._removeInterface(self)
 
 
 class PlotROI(pg.ROI):

@@ -90,7 +90,8 @@ class CameraInterface(CameraModuleInterface):
 
         # Set up microscope objective borders
         self.borders = CameraItemGroup(self.cam)
-        self.module.addItem(self.borders)
+        if self.module is not None:
+            self.module.addItem(self.borders)
         self.borders.setZValue(-1)
         
         self.cam.sigGlobalTransformChanged.connect(self.globalTransformChanged)
@@ -332,7 +333,10 @@ class CameraInterface(CameraModuleInterface):
         Manager.logMsg("Camera stopped acquisition.", importance=0)
 
     def showMessage(self, msg, delay=2000):
-        self.module.showMessage(msg, delay)
+        if self.module is not None:
+            self.module.showMessage(msg, delay)
+        else:
+            print(msg)
 
     def getImageItem(self):
         return self.imageItem

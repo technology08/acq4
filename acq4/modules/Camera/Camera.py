@@ -14,7 +14,8 @@ class Camera(Module):
         self.ui = CameraWindow(self)
         mp = os.path.dirname(__file__)
         self.ui.setWindowIcon(Qt.QIcon(os.path.join(mp, 'icon.png')))
-        manager.declareInterface(name, ['cameraModule'], self)
+        if manager is not None:
+            manager.declareInterface(name, ['cameraModule'], self)
         
     def window(self):
         return self.ui

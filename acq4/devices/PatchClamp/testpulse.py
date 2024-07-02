@@ -55,7 +55,8 @@ class TestPulseThread(Thread):
 
         self._daqName = self._clampDev.getDAQName("primary")
         self._clampName = self._clampDev.name()
-        self._manager = getManager()
+        # UNCOMMENT 59 TO RUN ACQ4
+        # self._manager = getManager()
 
         self.setParameters(**params)
 

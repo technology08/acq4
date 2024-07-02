@@ -5,6 +5,7 @@ import time
 
 import numpy as np
 from pyqtgraph import debug
+from typing import Tuple
 
 from acq4.util.Mutex import Mutex
 from acq4.util.Thread import Thread
@@ -39,7 +40,8 @@ class MicroManagerStage(Stage):
             if stageCfg is None:
                 continue
             self._axes.append(axes)
-
+            #print(self._axes)
+            #stageCfg = config
             adapterName = stageCfg['mmAdapterName']
             if adapterName not in allAdapters:
                 raise ValueError("Adapter name '%s' is not valid. Options are: %s" % (adapterName, allAdapters))
@@ -78,8 +80,11 @@ class MicroManagerStage(Stage):
 
         self._lastMove = None
         self._focusDevice = self
-        # self.userSpeed = np.asarray(self.mmc.getProperty(self._mmDeviceName, 'Speed-S')).astype(float) * self.speedToMeters
-        man.sigAbortAll.connect(self.abort)
+        self.userSpeed = 14.0 * self.speedToMeters
+        #self.userSpeed = np.asarray(self.mmc.getProperty(self._mmDeviceName, 'Speed-S')).astype(float) * self.speedToMeters
+        if man is not None:
+            man.sigAbortAll.connect(self.abort)
+
 
         Stage.__init__(self, man, config, name)
 
@@ -91,6 +96,17 @@ class MicroManagerStage(Stage):
         # thread for polling position changes
         self.monitor = MonitorThread(self)
         self.monitor.start()
+
+    def axes(self) -> Tuple[str]:
+        """Return a tuple of axis names implemented by this device, like ('x', 'y', 'z').
+
+        The axes described in the above data structure correspond to the mechanical
+        actuators on the device; they do not necessarily correspond to the axes in the 
+        global coordinate system or the local coordinate system of the device.
+
+        This method must be reimplemented by subclasses.
+        """
+        return self._axes
 
     def capabilities(self):
         """Return a structure describing the capabilities of this device"""
@@ -189,7 +205,9 @@ class MicroManagerStage(Stage):
 
             speed = self._interpretSpeed(speed)
 
-            self._lastMove = MicroManagerMoveFuture(self, pos, speed, self.userSpeed, moveXY=moveXY, moveX=moveZ)
+            # @COLUMBIA: Changed line to disable XY moves
+            #self._lastMove = MicroManagerMoveFuture(self, pos, speed, self.userSpeed, moveXY=moveXY, moveX=moveZ)
+            self._lastMove = MicroManagerMoveFuture(self, pos, speed, self.userSpeed, moveXY=False, moveZ=moveZ)
             return self._lastMove
 
     def deviceInterface(self, win):
@@ -259,11 +277,12 @@ class MicroManagerMoveFuture(MoveFuture):
         self._interrupted = False
         self._errorMSg = None
         self._finished = False
+        self._axes = dev._axes
         pos = np.array(pos) / np.array(self.dev.scale)
         with self.dev.lock:
             if moveXY:
                 self.dev.mmc.setXYPosition(self.dev._mmDeviceNames['xy'], pos[0:1])
-            if moveXY:
+            if moveZ:
                 self.dev.mmc.setPosition(self.dev._mmDeviceNames['z'], pos[2])
 
     def wasInterrupted(self):

@@ -18,11 +18,14 @@ class MultiClamp(PatchClamp):
     # remote process used to connect to commander from 32-bit python
     proc = None
 
-    def __init__(self, dm, config, name):
+    def __init__(self, dm, config, name, daq=None):
         PatchClamp.__init__(self, dm, config, name)
         self.index = None
         self.devRackGui = None
         self.mc = None
+
+        if daq is not None:
+            self.daq = daq
 
         # Cache MC parameters because they are very expensive to retrieve
         # (especially with multiple channels)
@@ -123,7 +126,8 @@ class MultiClamp(PatchClamp):
         self.setMode('I=0')  ## safest mode to leave clamp in
 
         
-        dm.declareInterface(name, ['clamp'], self)
+        if dm is not None:
+            dm.declareInterface(name, ['clamp'], self)
 
     def description(self):
         return self.config['channelID']
@@ -226,7 +230,47 @@ class MultiClamp(PatchClamp):
         It is important to have this because the amplifier's holding values cannot be changed
         before switching modes.
         """
-        with self.dm.reserveDevices([self, self.config['commandChannel']['device']]):
+        if self.dm is not None:
+            with self.dm.reserveDevices([self, self.config['commandChannel']['device']]):
+                currentMode = self.mc.getMode()
+                if mode is None:  ## If no mode is specified, use the current mode
+                    mode = currentMode
+                    if mode == 'I=0':  ## ..and if the current mode is I=0, do nothing.
+                        return
+                mode = mode.upper()
+                if mode == 'I=0':
+                    raise ValueError("Can't set holding value for I=0 mode.")
+
+                ## Update stored holding value if value is supplied
+                if value is not None:
+                    if self.holding[mode] == value:
+                        return
+                    self.holding[mode] = value
+                    state = self.lastState[mode]
+                    state['holding'] = value
+                    if mode == currentMode:
+                        self.sigStateChanged.emit(state)
+                    self.sigHoldingChanged.emit(mode, value)
+
+                ## We only want to set the actual DAQ channel if:
+                ##   - currently in I=0, or
+                ##   - currently in the mode that was changed
+                if mode != currentMode and currentMode != 'I=0':
+                    return
+
+                holding = self.holding[mode]
+                daq = self.getDAQName('command')
+                chan = self.config['commandChannel']['channel']
+                daqDev = self.dm.getDevice(daq)
+                s = self.extCmdScale(mode)  ## use the scale for the last remembered state from this mode
+                if s == 0:
+                    if holding == 0.0:
+                        s = 1.0
+                    else:
+                        raise ValueError('Can not set holding value for multiclamp--external command sensitivity is disabled by commander.')
+                scale = 1.0 / s
+                daqDev.setChannelValue(chan, holding*scale, block=False)
+        else:
             currentMode = self.mc.getMode()
             if mode is None:  ## If no mode is specified, use the current mode
                 mode = currentMode
@@ -235,7 +279,6 @@ class MultiClamp(PatchClamp):
             mode = mode.upper()
             if mode == 'I=0':
                 raise ValueError("Can't set holding value for I=0 mode.")
-
             ## Update stored holding value if value is supplied
             if value is not None:
                 if self.holding[mode] == value:
@@ -256,7 +299,7 @@ class MultiClamp(PatchClamp):
             holding = self.holding[mode]
             daq = self.getDAQName('command')
             chan = self.config['commandChannel']['channel']
-            daqDev = self.dm.getDevice(daq)
+            daqDev = self.daq # self.dm.getDevice(daq)
             s = self.extCmdScale(mode)  ## use the scale for the last remembered state from this mode
             if s == 0:
                 if holding == 0.0:
@@ -264,7 +307,7 @@ class MultiClamp(PatchClamp):
                 else:
                     raise ValueError('Can not set holding value for multiclamp--external command sensitivity is disabled by commander.')
             scale = 1.0 / s
-            daqDev.setChannelValue(chan, holding*scale, block=False)
+            daqDev.setChannelValue(chan, holding*scale, block=False) 
 
     def autoPipetteOffset(self):
         with self.dm.reserveDevices([self]):
@@ -294,8 +337,27 @@ class MultiClamp(PatchClamp):
         # these parameters change with clamp mode; need to invalidate cache
         for param in self.mode_dependent_params:
             self._paramCache.pop(param, None)
+        
+        if self.dm is not None:
+            with self.dm.reserveDevices([self, self.config['commandChannel']['device']]):
+                mcMode = self.mc.getMode()
+                if mcMode == mode:  ## Mode is already correct
+                    return
 
-        with self.dm.reserveDevices([self, self.config['commandChannel']['device']]):
+                # If switching ic <-> vc, switch to i=0 first
+                if (mcMode=='IC' and mode=='VC') or (mcMode=='VC' and mode=='IC'):
+                    self._switchingToMode = 'I=0'
+                    self.mc.setMode('I=0')
+                    mcMode = 'I=0'
+                if mcMode=='I=0':
+                    # Set holding level before leaving I=0 mode
+                    self.setHolding(mode)
+                self._switchingToMode = mode
+                self.mc.setMode(mode)
+
+                # MC requires 200-400 ms to mode switch; don't allow anyone else to access during that time.
+                time.sleep(0.5)
+        else:
             mcMode = self.mc.getMode()
             if mcMode == mode:  ## Mode is already correct
                 return
@@ -313,6 +375,7 @@ class MultiClamp(PatchClamp):
 
             # MC requires 200-400 ms to mode switch; don't allow anyone else to access during that time.
             time.sleep(0.5)
+
 
     def getDAQName(self, channel):
         """Return the DAQ name used by this device. (assumes there is only one DAQ for now)"""

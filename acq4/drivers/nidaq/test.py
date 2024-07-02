@@ -110,7 +110,6 @@ def syncADTest():
     print(data2[0].shape, data2[0].dtype)
     print(data2)
 
-
 def syncAIOTest():
     print("::::::::::::::::::  Sync Analog I/O Test  :::::::::::::::::::::")
     task1 = n.createTask()
