@@ -37,23 +37,15 @@ class CaptureState(State):
 
     def on_event(self, event):
         
-        #print(self.configured)
         if self.init_time is None:
             self.init_time = time.perf_counter()
-        #print(time.perf_counter() - self.init_time > 3)
+
         if not self.configured: 
             #self.wb.pressureController.setPressure(15, 2)
             #self.wb.pressureController.writeMessageSwitch("pressure 2")
             self.configured = True
 
             return self
-        
-        if time.perf_counter() - self.init_time > 3:
-            if not self.suction:
-                #self.wb.pressureController.setPressure(-15, 2)
-                self.suction = True
-
-                return self
         
         if time.perf_counter() - self.init_time > 5:
             cleared = input("Has capture pipette acquired a cell? (y/n) ")
@@ -62,8 +54,14 @@ class CaptureState(State):
                 return HuntState(self.wb)
             elif cleared == 'n':
                 return CleanState(self.wb)
-        
-        
+            
+        elif time.perf_counter() - self.init_time > 3:
+            if not self.suction:
+                #self.wb.pressureController.setPressure(-15, 2)
+                self.suction = True
+
+                return self
+          
         return self
     
 
@@ -88,21 +86,46 @@ class HuntState(State):
                 return SealState(self.wb)
             elif self.totalZMovement > 100:
                 raise ValueError("End!")
-                return CleanState(self.wb)
 
         return self
     
 class SealState(State):
+    init_time = None
+    configured = False
+    suction = False
+
     def on_event(self, event):
-        if event == 'pin_entered':
-            return CleanState()
+        if self.init_time is None:
+            self.init_time = time.perf_counter()
+
+        if not self.configured: 
+            #self.wb.pressureController.writeMessageSwitch("atmosphere 1")
+            self.configured = True
+
+            return self
+        
+        if time.perf_counter() - self.init_time > 2:
+            if not self.suction:
+                #self.wb.pressureController.setPressure(-15, 1)
+                #self.wb.pressureController.writeMessageSwitch("pressure 1")
+                self.suction = True
+                self.init_time = time.perf_counter() # restart timer
+
+                return self
+            else: 
+                newResistance = self.wb.measureResistance(60)
+                if newResistance > 1e3: 
+                    return BreakInState(self.wb)
+                elif time.perf_counter() - self.init_time > 20:
+                    return CleanState(self.wb)
 
         return self
     
 class BreakInState(State):
     def on_event(self, event):
-        if event == 'pin_entered':
-            return CleanState()
+        #if event == 'pin_entered':
+        #    return CleanState()
+
 
         # define our loop here
         return self
