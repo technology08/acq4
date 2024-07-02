@@ -309,7 +309,7 @@ class Workbench:
 
         return data1, data2
     
-    def calculateResistance(self, voltage_sent, current_read, periods_in_data):
+    def calculateResistance(self, voltage_sent, current_read, periods_in_data, recordCurrents=False):
         samples = len(current_read)
         sample_per_iter = int(samples / periods_in_data)
         resistances = []
@@ -322,7 +322,10 @@ class Workbench:
 
             resistance = (voltage_high - voltage_low) / (current_high - current_low)
             resistances.append(abs(resistance))
-
+        
+        if recordCurrents:
+            return resistances, current_high, current_low
+        
         return resistances
     
     def configureVoltageClamp(self):
@@ -330,7 +333,7 @@ class Workbench:
         self.clamp.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
         self.clamp.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
 
-    def measureResistance(self, frequency):
+    def measureResistance(self, frequency, returnCurrents=False):
         period = 1 / frequency
 
         _, voltage_data = self.sendPulse(1, 1, period)
@@ -341,5 +344,11 @@ class Workbench:
         voltage_sent = voltage_sent * self.clamp.getState()['secondaryScaleFactor']
         current_read = voltage_read * self.clamp.getState()['primaryScaleFactor']
 
-        resistances = self.calculateResistance(voltage_sent, current_read, 1)
-        return [resistance / 1e6 for resistance in resistances]
+        if returnCurrents:
+            resistances, current_high, current_low = self.calculateResistance(voltage_sent, current_read, 1, returnCurrents)
+
+            return [resistance / 1e6 for resistance in resistances], current_high, current_low
+        else:
+            resistances = self.calculateResistance(voltage_sent, current_read, 1, returnCurrents)
+        
+            return [resistance / 1e6 for resistance in resistances]

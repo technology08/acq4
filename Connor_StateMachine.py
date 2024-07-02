@@ -122,12 +122,30 @@ class SealState(State):
         return self
     
 class BreakInState(State):
+    
+    configured = False
+    pressureSet = False
+    init_time = None
+
     def on_event(self, event):
-        #if event == 'pin_entered':
-        #    return CleanState()
+        if self.configured == False:
+            self.init_time = time.perf_counter()
+            #self.wb.pressureController.writeMessageSwitch("atmosphere 1")
+            self.configured = True
 
+            return self
 
-        # define our loop here
+        if time.perf_counter - self.init_time > 1:
+            if not self.pressureSet:
+                #self.wb.pressureController.setPressure(-600, 1)
+                self.pressureSet = True
+                return self
+            
+            #self.wb.pressureController.writeMessageSwitch('breakin 1 300')
+            newResistance, currents_high, currents_low = self.wb.measureResistance(60, returnCurrents=True)
+
+            # Measure transient!
+
         return self
     
 class WholeCellState(State):
