@@ -1,5 +1,6 @@
-from Workbench import Workbench
+from Workbench import Workbench, arrayAverage
 import time
+import datetime
 
 class State(object):
     """
@@ -10,6 +11,7 @@ class State(object):
 
     def __init__(self, wb):
         self.wb = wb
+        self.file = open('resistance.txt', 'a')
         print('Processing current state:', str(self))
 
     def on_event(self, event):
@@ -67,24 +69,33 @@ class CaptureState(State):
 
 class HuntState(State):
     baselineResistance = None
+    counter = 0
     totalZMovement = 0 # ,
 
     def on_event(self, event):
-        if self.baselineResistance is None: 
+        if self.baselineResistance is None or self.counter < 10: 
             resistances = self.wb.measureResistance(frequency=60)  
-            self.baselineResistance = sum(resistances) / len(resistances)      
+            self.file.write(datetime.datetime.now().isoformat(' ') + ' ' + str(round(arrayAverage(resistances), 2)) + '\n')
+            self.baselineResistance = sum(resistances) / len(resistances)  
+            self.counter += 1    
         else:
             self.wb.moveManipulatorOnAxis(2, -2, 1, True)
             self.totalZMovement += 2
             newResistance = self.wb.measureResistance(60)
+            print(newResistance[0])
+            self.file.write(datetime.datetime.now().isoformat(' ') + ' ' + str(round(arrayAverage(newResistance), 2)) + '\n')
             
-            if newResistance < 0.01 * self.baselineResistance:
+            if newResistance[0] < 0.01 * self.baselineResistance:
                 print("Abort!")
+                self.file.close()
                 return AbortState(self.wb)
-            elif newResistance > 1.1 * self.baselineResistance:
+            elif newResistance[0] > 1.3 * self.baselineResistance:
                 print("Seal")
+                self.file.close()
+                raise ValueError("something")
                 return SealState(self.wb)
             elif self.totalZMovement > 100:
+                self.file.close()
                 raise ValueError("End!")
 
         return self
@@ -114,6 +125,7 @@ class SealState(State):
                 return self
             else: 
                 newResistance = self.wb.measureResistance(60)
+                self.file.write(datetime.datetime.now().isoformat(' ') + ' ' + str(round(arrayAverage(newResistance), 2)) + '\n')
                 if newResistance > 1e3: 
                     return BreakInState(self.wb)
                 elif time.perf_counter() - self.init_time > 20:
@@ -143,6 +155,8 @@ class BreakInState(State):
                 return self
             
             #self.wb.pressureController.writeMessageSwitch('breakin 1 300')
+            newResistance = self.wb.measureResistance(60)
+            
             transient_present = self.wb.measureTransient(60)
 
             # Measure transient!
@@ -191,7 +205,18 @@ class SimpleDevice(object):
 
         # Start with a default state.
         self.state = CaptureState(self.wb)
+        self.initVoltClamp()
         self.on_event('configure_capture')
+
+    def initVoltClamp(self):
+        self.wb.voltageClamp()
+        self.wb.clamp.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
+        self.wb.clamp.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
+
+    #def acquireResistance(self, stop_recording):
+    #    while not stop_recording.is_set():
+    #        self.resistance = self.wb.measureResistance(60)
+    #        self.file.write(datetime.datetime.now().isoformat(' ') + ' ' + self.state.__str__ + str(round(arrayAverage(self.resistance), 2)) + '\n')
 
     def on_event(self, event):
         """
@@ -201,7 +226,7 @@ class SimpleDevice(object):
         """
 
         # The next state will be the result of the on_event function.
-        self.state = self.state.on_event(event)
+        self.state = self.state.on_event(event)#self.resistance)
 
 machine = SimpleDevice()
 

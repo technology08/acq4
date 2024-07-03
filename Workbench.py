@@ -20,61 +20,29 @@ import numpy as np
 class Workbench: 
 
     def __init__(self):
-        # MANIPULATOR
+        # MANIPULATOR 1
         baudrate = int(sys.argv[2]) if len(sys.argv) > 2 else None
         devname = "COM4"
         if devname.lower().startswith('com') or devname.startswith('/dev/'):
             self.ps = Scientifica(port=devname, baudrate=baudrate, ctrl_version=None)
-            print(self.ps.getPort())
         else:
             self.ps = Scientifica(name=devname, baudrate=baudrate, ctrl_version=None)
 
-        
+        print("Created PatchStar 1 at port ", self.ps.getPort())
+
+        # MANIPULATOR 2
         devname = "COM3"
         if devname.lower().startswith('com') or devname.startswith('/dev/'):
-            print(devname)
             self.ps2 = Scientifica(port=devname, baudrate=baudrate, ctrl_version=None)
-            print(self.ps2.getPort())
         else:
             self.ps2 = Scientifica(name=devname, baudrate=baudrate, ctrl_version=None)
         
-
-        def printManipulatorSettings():
-            print("Device type:  %s  Description:  %s" % (self.ps.getType(), self.ps.getDescription()))
-            print("Firmware version: %r" % self.ps.getFirmwareVersion())
-            print("Position: %r" % self.ps.getPos())
-            print("Max speed: %r um/sec" % self.ps.getSpeed())
-            if self.ps._version < 3:
-                print("Min speed: %r um/sec" % (self.ps.getParam('minSpeed') / (2. * self.ps.getAxisScale(0))))
-                print("Acceleration: %r um^2/sec" % (self.ps.getParam('accel') * 250. / self.ps.getAxisScale(0)))
-            else:
-                print("Min speed: %r um/sec" % self.ps.getParam('minSpeed'))
-                print("Acceleration: %r um^2/sec" % self.ps.getParam('accel'))
-        print("Configured PatchStar")
+        print("Created PatchStar 2 at port ", self.ps2.getPort())
 
         # NATIONAL INSTRUMENTS DAQ
         self.daq = NiDAQ(None, 
                     {'defaultAIMode': 'NRSE', 'defaultAIRange': [-10, 10], 'defaultAORange': [-10, 10]}, 
                     "DAQ")
-
-        def printDAQSettings():
-            print("Assert num devs > 0:")
-            assert len(n.listDevices()) > 0
-            print("  OK")
-            print("devices: %s" % n.listDevices())
-            dev = n.listDevices()[0]
-
-            print("\nAnalog Channels:")
-            print("  AI: ", n.listAIChannels(dev))
-            print("  AO: ", n.listAOChannels(dev))
-
-            print("\nDigital ports:")
-            print("  DI: ", n.listDIPorts(dev))
-            print("  DO: ", n.listDOPorts(dev))
-
-            print("\nDigital lines:")
-            print("  DI: ", n.listDILines(dev))
-            print("  DO: ", n.listDOLines(dev))
 
         # MULTICLAMP
         self.clamp = MultiClamp(None, {'channelID': 'model:MC700B,sn:00836613,chan:1',
@@ -96,11 +64,6 @@ class Workbench:
             'vcHolding': 0.0,
             'icHolding': 0.0}, 'Clamp1', self.daq)
 
-        def printClampstateOptions():
-            print("Clamp State Options: ", self.clamp.getState())
-
-        printClampstateOptions()
-
         # HAMAMATSU ORCA CAMERA
         self.camera = MicroManagerCamera(None, {'mmAdapterName': 'HamamatsuHam',
             'mmDeviceName': 'HamamatsuHam_DCAM'}, 'Camera')
@@ -119,8 +82,9 @@ class Workbench:
                     'baud': 9600}}
         }, 'Stage')
 
-        print("Configured Stage")
+        print("Created Stage")
 
+        # PRESSURE CONTROLLER
         self.pressureController = PressureController([1, 2, 3, 4], ['COM8', 'COM9', 'COM10', 'COM11'])
 
         print("Created Pressure Controller")
@@ -139,6 +103,41 @@ class Workbench:
             plt.imshow(frame, interpolation='nearest')
             plt.title(title)
             plt.show()
+
+    # Test Functions
+    def printDAQSettings():
+        print("Assert num devs > 0:")
+        assert len(n.listDevices()) > 0
+        print("  OK")
+        print("devices: %s" % n.listDevices())
+        dev = n.listDevices()[0]
+
+        print("\nAnalog Channels:")
+        print("  AI: ", n.listAIChannels(dev))
+        print("  AO: ", n.listAOChannels(dev))
+
+        print("\nDigital ports:")
+        print("  DI: ", n.listDIPorts(dev))
+        print("  DO: ", n.listDOPorts(dev))
+
+        print("\nDigital lines:")
+        print("  DI: ", n.listDILines(dev))
+        print("  DO: ", n.listDOLines(dev))
+
+    def printClampstateOptions(self):
+        print("Clamp State Options: ", self.clamp.getState())
+
+    def printManipulatorSettings(self):
+        print("Device type:  %s  Description:  %s" % (self.ps.getType(), self.ps.getDescription()))
+        print("Firmware version: %r" % self.ps.getFirmwareVersion())
+        print("Position: %r" % self.ps.getPos())
+        print("Max speed: %r um/sec" % self.ps.getSpeed())
+        if self.ps._version < 3:
+            print("Min speed: %r um/sec" % (self.ps.getParam('minSpeed') / (2. * self.ps.getAxisScale(0))))
+            print("Acceleration: %r um^2/sec" % (self.ps.getParam('accel') * 250. / self.ps.getAxisScale(0)))
+        else:
+            print("Min speed: %r um/sec" % self.ps.getParam('minSpeed'))
+            print("Acceleration: %r um^2/sec" % self.ps.getParam('accel'))
 
     # Move Manipulator
     def moveManipulatorOnAxis(self, axis, val, speed, displayResults=False):
@@ -312,7 +311,6 @@ class Workbench:
         return output
     
     def sendPulse(self, peak, offset, period):
-
         samples = int(period * self.CYCLES_PER_SECOND)
 
         task1 = n.createTask()
@@ -345,10 +343,10 @@ class Workbench:
         resistances = []
         # Look 18% and 28% of the way thru
         for i in range(periods_in_data): # five periods, change this later
-            voltage_high =  arrayAverage(voltage_sent[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.8 * sample_per_iter):int(0.9 * sample_per_iter)])
-            voltage_low  =  arrayAverage(voltage_sent[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.3 * sample_per_iter):int(0.4 * sample_per_iter)])
-            current_high =  arrayAverage(current_read[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.8 * sample_per_iter):int(0.9 * sample_per_iter)])
-            current_low  =  arrayAverage(current_read[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.3 * sample_per_iter):int(0.4 * sample_per_iter)])
+            voltage_high =  arrayAverage(voltage_sent[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.89 * sample_per_iter):int(0.9 * sample_per_iter)])
+            voltage_low  =  arrayAverage(voltage_sent[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.39 * sample_per_iter):int(0.4 * sample_per_iter)])
+            current_high =  arrayAverage(current_read[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.89 * sample_per_iter):int(0.9 * sample_per_iter)])
+            current_low  =  arrayAverage(current_read[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.39 * sample_per_iter):int(0.4 * sample_per_iter)])
 
             resistance = (voltage_high - voltage_low) / (current_high - current_low)
             resistances.append(abs(resistance))
@@ -366,6 +364,7 @@ class Workbench:
         self.clamp.setParam('SecondarySignal', 'SIGNAL_IC_MEMBPOTENTIAL')
 
     def measureResistance(self, frequency):
+        """Returns resistance measurements for each pulse. Sends single pulse at given `frequency` before measuring."""
         period = 1 / frequency
 
         _, voltage_data = self.sendPulse(1, 1, period)
@@ -379,8 +378,9 @@ class Workbench:
         resistances = self.calculateResistance(voltage_sent, current_read, 1)
     
         return [resistance / 1e6 for resistance in resistances]
-        
+
     def measureTransient(self, frequency):
+        """Returns `True` if a transient similar to that of a cell is present after sending a pulse of a given `frequency`."""
         period = 1 / frequency
 
         _, voltage_data = self.sendPulse(1, 1, period)

@@ -65,6 +65,9 @@ def streamPulses2():
     acquisition_thread = threading.Thread(target=acquireData2, args=(data_queue, periods_in_duration, period, stop_event))
     acquisition_thread.start()
 
+    acquisition_thread_2 = threading.Thread(target=acquireData3, args=(data_queue, periods_in_duration, period, stop_event))
+    acquisition_thread_2.start()
+
     fig, ax = plt.subplots(3, 1)
     x = np.zeros(1)
     line1, = ax[0].plot(x, np.zeros(1))
@@ -80,6 +83,7 @@ def streamPulses2():
 
     stop_event.set()
     acquisition_thread.join()
+    acquisition_thread_2.join()
 
     
 def update_plot2(frame, data_queue, line1, line2):
@@ -111,6 +115,10 @@ def acquireData2(data_queue, periods_in_duration, period, stop_recording):
         print("Resistances 2: ", round(resistances[0] / 1e6, 2))
 
         data_queue.put((voltage_sent, current_read))
+
+def acquireData3(data_queue, periods_in_duration, period, stop_recording):
+    while not stop_recording.is_set():
+        print('Resistances 3: ', round(workbench.measureResistance(60)[0], 2))
 
 def updateFigure(fig, lines, newDataArr):
     for i in range(len(lines)):
