@@ -164,7 +164,7 @@ class Workbench:
         self.ps2.moveTo(pos2, speed=speed)
         #i = 0
         if displayResults:
-            while self.p2.isMoving():
+            while self.ps2.isMoving():
                 pos = self.ps2.getPos()
                 print("time: %s position: %s" % (time.time(), pos))
                 time.sleep(0.01)
