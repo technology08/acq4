@@ -22,11 +22,22 @@ class Workbench:
     def __init__(self):
         # MANIPULATOR
         baudrate = int(sys.argv[2]) if len(sys.argv) > 2 else None
-        devname = "PatchStar"
+        devname = "COM4"
         if devname.lower().startswith('com') or devname.startswith('/dev/'):
             self.ps = Scientifica(port=devname, baudrate=baudrate, ctrl_version=None)
+            print(self.ps.getPort())
         else:
             self.ps = Scientifica(name=devname, baudrate=baudrate, ctrl_version=None)
+
+        
+        devname = "COM3"
+        if devname.lower().startswith('com') or devname.startswith('/dev/'):
+            print(devname)
+            self.ps2 = Scientifica(port=devname, baudrate=baudrate, ctrl_version=None)
+            print(self.ps2.getPort())
+        else:
+            self.ps2 = Scientifica(name=devname, baudrate=baudrate, ctrl_version=None)
+        
 
         def printManipulatorSettings():
             print("Device type:  %s  Description:  %s" % (self.ps.getType(), self.ps.getDescription()))
@@ -140,6 +151,21 @@ class Workbench:
         if displayResults:
             while self.ps.isMoving():
                 pos = self.ps.getPos()
+                print("time: %s position: %s" % (time.time(), pos))
+                time.sleep(0.01)
+            #i += 1
+
+    # Move Manipulator
+    def moveManipulator2OnAxis(self, axis, val, speed, displayResults=False):
+        pos1 = self.ps2.getPos()
+        pos2 = [None, None, None]
+        pos2[axis] = pos1[axis] + val
+        print("Move %s => %s" % (pos1, pos2))
+        self.ps2.moveTo(pos2, speed=speed)
+        #i = 0
+        if displayResults:
+            while self.p2.isMoving():
+                pos = self.ps2.getPos()
                 print("time: %s position: %s" % (time.time(), pos))
                 time.sleep(0.01)
             #i += 1
