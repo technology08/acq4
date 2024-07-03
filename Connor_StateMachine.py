@@ -75,7 +75,7 @@ class HuntState(State):
     def on_event(self, event):
         if self.baselineResistance is None or self.counter < 10: 
             resistances = self.wb.measureResistance(frequency=60)  
-            self.file.write(datetime.datetime.now().isoformat(' ') + ' ' + str(round(arrayAverage(resistances), 2)) + '\n')
+            self.file.write(datetime.datetime.now().isoformat(' ') + ' ' + self.__str__() + ' ' + str(round(arrayAverage(resistances), 2)) + '\n')
             self.baselineResistance = sum(resistances) / len(resistances)  
             self.counter += 1    
         else:
@@ -83,7 +83,7 @@ class HuntState(State):
             self.totalZMovement += 2
             newResistance = self.wb.measureResistance(60)
             print(newResistance[0])
-            self.file.write(datetime.datetime.now().isoformat(' ') + ' ' + str(round(arrayAverage(newResistance), 2)) + '\n')
+            self.file.write(datetime.datetime.now().isoformat(' ') + ' ' + self.__str__() + ' ' + str(round(arrayAverage(newResistance), 2)) + '\n')
             
             if newResistance[0] < 0.01 * self.baselineResistance:
                 print("Abort!")
@@ -125,7 +125,7 @@ class SealState(State):
                 return self
             else: 
                 newResistance = self.wb.measureResistance(60)
-                self.file.write(datetime.datetime.now().isoformat(' ') + ' ' + str(round(arrayAverage(newResistance), 2)) + '\n')
+                self.file.write(datetime.datetime.now().isoformat(' ') + ' ' + self.__str__() + ' ' + str(round(arrayAverage(newResistance), 2)) + '\n')
                 if newResistance > 1e3: 
                     return BreakInState(self.wb)
                 elif time.perf_counter() - self.init_time > 20:
@@ -202,7 +202,9 @@ class SimpleDevice(object):
     def __init__(self):
         """ Initialize the components. """
         self.wb = Workbench()
-
+        self.file = open('resistance.txt', 'w')
+        self.file.write('Experiment commencing at ' + datetime.datetime.now().isoformat() +'\n')
+        self.file.close()
         # Start with a default state.
         self.state = CaptureState(self.wb)
         self.initVoltClamp()
