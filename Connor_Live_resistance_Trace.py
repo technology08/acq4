@@ -32,17 +32,21 @@ def calculateResistance(voltage_sent, current_read, periods_in_data):
     samples = len(current_read)
     sample_per_iter = int(samples / periods_in_data)
     resistances = []
+    transient_present = False
     # Look 18% and 28% of the way thru
     for i in range(periods_in_data): # five periods, change this later
-        voltage_high = voltage_sent[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.9 * sample_per_iter)]
-        voltage_low =  voltage_sent[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.4 * sample_per_iter)]
-        current_high = current_read[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.9 * sample_per_iter)]
-        current_low =  current_read[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.4 * sample_per_iter)]
+        voltage_high = arrayAverage(voltage_sent[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.8 * sample_per_iter):int(0.9 * sample_per_iter)])
+        voltage_low  = arrayAverage(voltage_sent[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.3 * sample_per_iter):int(0.4 * sample_per_iter)])
+        current_high = arrayAverage(current_read[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.8 * sample_per_iter):int(0.9 * sample_per_iter)])
+        current_low  = arrayAverage(current_read[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.3 * sample_per_iter):int(0.4 * sample_per_iter)])
+
+        if abs((max(current_read) - min(current_read)) / (current_high - current_low)) > 2 and (max(current_read) - current_high > 1e-9):
+            transient_present = True
 
         resistance = (voltage_high - voltage_low) / (current_high - current_low)
         resistances.append(abs(resistance))
 
-    return resistances
+    return resistances, transient_present
 
 def calculateCapacitance(voltage_sent, current_read, periods_in_data):
     samples = len(current_read)
@@ -154,9 +158,9 @@ def acquireData2(data_queue, periods_in_duration, period, stop_recording):
         voltageTrace.append(voltage_sent)
         currentTrace.append(current_read)
 
-        resistances = calculateResistance(voltage_sent, current_read, 1)
-        print("Resistances 2: ", round(resistances[0] / 1e6, 2))
-        calculateCapacitance(voltage_sent, current_read, 1)
+        resistances, transient_present = calculateResistance(voltage_sent, current_read, 1)
+        print("Resistances 2: ", round(resistances[0] / 1e6, 2), transient_present)
+        #calculateCapacitance(voltage_sent, current_read, 1)
 
         data_queue.put((voltage_sent, current_read, voltageTrace, currentTrace))
 

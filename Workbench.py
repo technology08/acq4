@@ -309,22 +309,19 @@ class Workbench:
 
         return data1, data2
     
-    def calculateResistance(self, voltage_sent, current_read, periods_in_data, recordCurrents=False):
+    def calculateResistance(self, voltage_sent, current_read, periods_in_data):
         samples = len(current_read)
         sample_per_iter = int(samples / periods_in_data)
         resistances = []
         # Look 18% and 28% of the way thru
         for i in range(periods_in_data): # five periods, change this later
-            voltage_high = voltage_sent[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.9 * sample_per_iter)]
-            voltage_low =  voltage_sent[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.4 * sample_per_iter)]
-            current_high = current_read[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.9 * sample_per_iter)]
-            current_low =  current_read[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.4 * sample_per_iter)]
+            voltage_high =  arrayAverage(voltage_sent[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.8 * sample_per_iter):int(0.9 * sample_per_iter)])
+            voltage_low  =  arrayAverage(voltage_sent[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.3 * sample_per_iter):int(0.4 * sample_per_iter)])
+            current_high =  arrayAverage(current_read[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.8 * sample_per_iter):int(0.9 * sample_per_iter)])
+            current_low  =  arrayAverage(current_read[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.3 * sample_per_iter):int(0.4 * sample_per_iter)])
 
             resistance = (voltage_high - voltage_low) / (current_high - current_low)
             resistances.append(abs(resistance))
-        
-        if recordCurrents:
-            return resistances, current_high, current_low
         
         return resistances
     
@@ -333,7 +330,7 @@ class Workbench:
         self.clamp.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
         self.clamp.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
 
-    def measureResistance(self, frequency, returnCurrents=False):
+    def measureResistance(self, frequency):
         period = 1 / frequency
 
         _, voltage_data = self.sendPulse(1, 1, period)
@@ -344,11 +341,35 @@ class Workbench:
         voltage_sent = voltage_sent * self.clamp.getState()['secondaryScaleFactor']
         current_read = voltage_read * self.clamp.getState()['primaryScaleFactor']
 
-        if returnCurrents:
-            resistances, current_high, current_low = self.calculateResistance(voltage_sent, current_read, 1, returnCurrents)
-
-            return [resistance / 1e6 for resistance in resistances], current_high, current_low
-        else:
-            resistances = self.calculateResistance(voltage_sent, current_read, 1, returnCurrents)
+        resistances = self.calculateResistance(voltage_sent, current_read, 1)
+    
+        return [resistance / 1e6 for resistance in resistances]
         
-            return [resistance / 1e6 for resistance in resistances]
+    def measureTransient(self, frequency):
+        period = 1 / frequency
+
+        _, voltage_data = self.sendPulse(1, 1, period)
+        
+        voltage_sent = voltage_data[0][1]
+        voltage_read = voltage_data[0][0]
+
+        voltage_sent = voltage_sent * self.clamp.getState()['secondaryScaleFactor']
+        current_read = voltage_read * self.clamp.getState()['primaryScaleFactor']
+
+        #transient_present = self.currentTransient(current_read, 1)
+        periods_in_data = 1
+        samples = len(current_read)
+        sample_per_iter = int(samples / periods_in_data)
+        # Look 18% and 28% of the way thru
+        for i in range(periods_in_data): # five periods, change this later
+            current_high = arrayAverage(current_read[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.8 * sample_per_iter):int(0.9 * sample_per_iter)])
+            current_low  = arrayAverage(current_read[i*sample_per_iter:(i+1)*sample_per_iter-1][int(0.3 * sample_per_iter):int(0.4 * sample_per_iter)])
+
+            if abs((max(current_read) - min(current_read)) / (current_high - current_low)) > 2 and (max(current_read) - current_high > 1e-9):
+                return True
+        
+        return False
+        
+
+def arrayAverage(arr):
+    return sum(arr) / len(arr)

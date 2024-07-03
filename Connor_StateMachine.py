@@ -126,6 +126,7 @@ class BreakInState(State):
     configured = False
     pressureSet = False
     init_time = None
+    attempts = 0
 
     def on_event(self, event):
         if self.configured == False:
@@ -142,9 +143,15 @@ class BreakInState(State):
                 return self
             
             #self.wb.pressureController.writeMessageSwitch('breakin 1 300')
-            newResistance, currents_high, currents_low = self.wb.measureResistance(60, returnCurrents=True)
+            transient_present = self.wb.measureTransient(60)
 
             # Measure transient!
+            if transient_present:
+                return WholeCellState(self.wb)
+            elif self.attempts > 10:
+                return CleanState(self.wb)
+            else: 
+                attempts += 1
 
         return self
     
@@ -194,10 +201,13 @@ class SimpleDevice(object):
 
 machine = SimpleDevice()
 
-while True:
-    machine.on_event('')
-    print(machine.state)
-    
+try:
+    while True:
+        machine.on_event('')
+        print(machine.state)
+except KeyboardInterrupt:
+    machine.wb.__del__()
+    raise("Ctrl- C, Terminating")
 # Every state returns the next state
 # While loop runs outside state machine
 # Has resistance increased by 10% Pull bath test out, will cause resistance to increase and call transition.
