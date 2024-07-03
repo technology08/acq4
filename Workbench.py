@@ -187,6 +187,10 @@ class Workbench:
         print("Switching to VC on MC")
         self.clamp.setMode('VC')
 
+    def currentClamp(self):
+        print("Switching to CC on MC")
+        self.clamp.setMode('CC')
+
     def setDAQOutput(self, val, hold=0.0):
         print("Changing ao0 to ", val, "V")
         self.daq.setChannelValue('/Dev1/ao0', val)
@@ -329,6 +333,11 @@ class Workbench:
         self.voltageClamp()
         self.clamp.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
         self.clamp.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
+
+    def configureCurrentClamp(self):
+        self.currentClamp()
+        self.clamp.setParam('PrimarySignal', 'SIGNAL_IC_MEMBCURRENT')
+        self.clamp.setParam('SecondarySignal', 'SIGNAL_IC_MEMBPOTENTIAL')
 
     def measureResistance(self, frequency):
         period = 1 / frequency

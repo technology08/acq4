@@ -156,9 +156,13 @@ class BreakInState(State):
         return self
     
 class WholeCellState(State):
+
+    counter = 0
+    measuredBaseResistance = False
+
     def on_event(self, event):
-        if event == 'pin_entered':
-            return CleanState()
+        if not self.measuredBaseResistance: 
+            self.wb.currentClamp()
 
         return self
 

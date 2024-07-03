@@ -79,9 +79,6 @@ def streamPulses2():
     workbench.clamp.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
     workbench.clamp.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
 
-    #time.sleep(2)
-    
-    #workbench.configureTasks(duration)    
     print("Configured!")
     periods_in_duration = duration / period
 
