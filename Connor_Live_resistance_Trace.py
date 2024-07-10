@@ -140,7 +140,7 @@ def acquireData2(data_queue, periods_in_duration, period, stop_recording):
     
     while not stop_recording.is_set():
         _, voltage_data = workbench.sendPulse(1, 1, period)
-        #print(voltage_data)
+        
         voltage_sent = voltage_data[0][1]
         voltage_read = voltage_data[0][0]
 

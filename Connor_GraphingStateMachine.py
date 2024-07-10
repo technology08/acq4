@@ -4,12 +4,9 @@ import datetime
 import threading
 import queue
 import numpy as np
-
+import multiprocessing
 from matplotlib.animation import FuncAnimation
 from matplotlib import pyplot as plt
-
-import nest_asyncio
-nest_asyncio.apply()
 
 class State(object):
     """
@@ -216,16 +213,15 @@ class SimpleDevice(object):
     def __init__(self):
         """ Initialize the components. """
         self.wb = Workbench()
-        #self.file = open('resistance.txt', 'w')
-        #self.file.write('Experiment commencing at ' + datetime.datetime.now().isoformat() +'\n')
-        #self.file.close()
-        self.data_queue = None
+        self.file = open('resistance.txt', 'w')
+        self.file.write('Experiment commencing at ' + datetime.datetime.now().isoformat() +'\n')
+        self.file.close()
+        self.data_queue = multiprocessing.Queue()
         self.file = open('resistance.txt', 'a')
         # Start with a default state.
        
         self.state = CaptureState(self.wb)
         #self.initVoltClamp()
-        self.data_queue = queue.Queue(100)
         self.streamPulses()
         self.on_event('configure_capture')
 
@@ -233,7 +229,7 @@ class SimpleDevice(object):
         self.file.close()
         self.stop_event.set()
         self.acquisition_thread.join()
-        #self.plot_thread.join()
+        self.plot_thread.join()
 
     def initVoltClamp(self):
         self.wb.voltageClamp()
@@ -263,105 +259,18 @@ class SimpleDevice(object):
 
         print("Configured background recording!")
 
+        #self.data_queue = queue.Queue()
+        #self.stop_event = threading.Event()
+        # self.data_queue = queue.Queue()
         self.stop_event = threading.Event()
 
         self.acquisition_thread = threading.Thread(target=self.acquireData, args=(self.data_queue, period, self.stop_event))
         self.acquisition_thread.start()
 
-        fig, self.ax = plt.subplots(3, 1)
-        x = np.zeros(1)
-        self.voltage = [0 for _ in range(350)]
-        self.current = [0 for _ in range(350)]
-        self.resistanceHistory = [0 for _ in range(1000)]
-        self.transientHistory = [0 for _ in range(1000)]
-        self.dates = [0 for _ in range(1000)]
-
-        self.line1, = self.ax[0].plot(x, np.zeros(1))
-        self.line2, = self.ax[1].plot(x, np.zeros(1))
-        self.line3, = self.ax[2].plot(np.zeros(1000), np.zeros(1000))
-    
-        self.ax[0].set_xlim([-20, 400])
-        self.ax[0].set_ylim([-0.01, 0.05])
-        self.ax[1].set_xlim([-20, 400])
-        self.ax[1].set_ylim([-1E-9, 5e-9])
-        self.ax[2].set_xlim([-10, 101])
-        self.ax[2].set_ylim([-10, 3000])
+        #self.plotting_thread = multiprocessing.Process(None, target=self.buildPlot, args=())
+        #self.plotting_thread.start()
 
         
-        #plt.ion()
-        #self.plot_thread = threading.Thread(target=self.animatePlot, args=(fig, line1, line2, line3, voltageTraceLines, currentTraceLines))
-        #animation = FuncAnimation(fig, self.updatePlot, fargs=(self.data_queue, line1, line2, line3), interval=1000/1, blit=True)
-        #self.plot_thread.start()
-        
-        #plt.show()
-        plt.show(block=False)
-        
-
-    def animatePlot(self, fig, line1, line2, line3, voltageTraceLines, currentTraceLines):
-        animation = FuncAnimation(fig, self.updatePlot, fargs=(self.data_queue, line1, line2, line3, voltageTraceLines, currentTraceLines), interval=1000/60)
-        
-    def updatePlot(self, frame, data_queue, line1, line2, line3):
-        try:
-            while not data_queue.empty():
-                voltage, current, voltageTrace, currentTrace, resistanceHistory, transientHistory, dates = data_queue.get_nowait()
-                
-                line1.set_xdata(np.arange(len(voltage)))
-                line1.set_ydata(voltage)
-                line2.set_xdata(np.arange(len(current)))
-                line2.set_ydata(current)
-                line3.set_xdata(np.arange(len(resistanceHistory)))
-                line3.set_ydata(resistanceHistory)
-                if transientHistory[-1]:
-                    line3.set_color('green')
-                else:
-                    line3.set_color('red')
-                #plt.draw()
-                plt.pause(0.05)
-        except queue.Empty:
-            pass# return line1, line2, line3,
-
-        return line1, line2, line3
-    
-    def updatePlotIndependent(self):
-        if not self.data_queue.empty():
-            print(self.data_queue.qsize())
-            while not self.data_queue.empty():
-                self.voltage, self.current, resistance, transientPresent, date = self.data_queue.get_nowait()
-                print(self.data_queue.qsize())
-                
-                if len(self.resistanceHistory) >= 100:
-                    self.resistanceHistory = self.resistanceHistory[-99:-1]
-                if len(self.dates) >= 100:
-                    self.dates = self.dates[-99:-1]
-                if len(self.transientHistory) >= 100:
-                    self.transientHistory = self.transientHistory[-99:-1]
-
-                self.resistanceHistory.append(resistance)
-                self.dates.append(date)
-                self.transientHistory.append(transientPresent)
-
-            self.line1.set_xdata(np.arange(len(self.voltage)))
-            self.line1.set_ydata(self.voltage)
-            self.line2.set_xdata(np.arange(len(self.current)))
-            self.line2.set_ydata(self.current)
-
-            self.line3.set_xdata(np.arange(len(self.resistanceHistory)))
-            self.line3.set_ydata(self.resistanceHistory)
-
-            self.ax[0].set_title(self.dates[-1].isoformat(' '))
-
-            if self.transientHistory[-1]:
-                self.line3.set_color('green')
-            else:
-                self.line3.set_color('red')
-            #plt.draw()
-            plt.pause(0.001)
-        else:
-            print("Queue empty ")
-            pass# return line1, line2, line3,
-
-        #return line1, line2, line3
-    
     # DATAQUEUE:
     # voltage_sent: Voltage reading of last pulse
     # current_read: Current reading of last pulse
@@ -371,11 +280,11 @@ class SimpleDevice(object):
     # dates: Last 100 timestamps. Each maps to resistance measurement: last 10 to traces, last one to current measurement
 
     def acquireData(self, data_queue, period, stop_recording):
-        #voltageTrace = []
-        #currentTrace = []
-        #resistanceHistory = [0 for _ in range(100)]
-        #transientHistory = [0 for _ in range(100)]
-        #dates = [0 for _ in range(100)]
+        voltageTrace = []
+        currentTrace = []
+        resistanceHistory = []
+        transientHistory = []
+        dates = []
         
         while not stop_recording.is_set():
             _, voltage_data = self.wb.sendPulse(1, 1, period)
@@ -386,36 +295,104 @@ class SimpleDevice(object):
             voltage_sent = voltage_sent * self.wb.clamp.getState()['secondaryScaleFactor']
             current_read = voltage_read * self.wb.clamp.getState()['primaryScaleFactor']
 
-            #if len(resistanceHistory) >= 100:
-            #    resistanceHistory = resistanceHistory[-99:-1]
-            #if len(dates) >= 100:
-            #    dates = dates[-99:-1]
-            #if len(transientHistory) >= 100:
-            #    transientHistory = dates[-99:-1]
+            if len(voltageTrace) >= 5:
+                voltageTrace = voltageTrace[-4:-1]
+            if len(currentTrace) >= 5:
+                currentTrace = currentTrace[-4:-1]
+            if len(resistanceHistory) >= 1000:
+                resistanceHistory = resistanceHistory[-999:-1]
+            if len(dates) >= 100:
+                dates = dates[-99:-1]
+            if len(transientHistory) >= 1000:
+                transientHistory = dates[-999:-1]
 
-            #voltageTrace.append(voltage_sent)
-            #currentTrace.append(current_read)
+            voltageTrace.append(voltage_sent)
+            currentTrace.append(current_read)
             
             resistances, transient_present = self.wb.calculateResistance(voltage_sent, current_read, 1)
             #print("Resistances 2: ", round(resistances[0] / 1e6, 2))
             megasurement = resistances[0] / 1e6
-            #resistanceHistory.append(megasurement)
-            #transientHistory.append(transient_present)
+            resistanceHistory.append(megasurement)
+            transientHistory.append(transient_present)
             date = datetime.datetime.now()
-            #dates.append(date)
-            #self.file.write(date.isoformat(' ') + ' ' + self.state.__str__() + ' ' + str(round(megasurement, 2)) + '\n')
-            data_queue.put((voltage_sent, current_read, megasurement, transient_present, date))
+            dates.append(date)
+            self.file.write(date.isoformat(' ') + ' ' + self.state.__str__() + ' ' + str(round(megasurement, 2)) + '\n')
+            data_queue.put((voltage_sent, current_read, voltageTrace, currentTrace, resistanceHistory, transientHistory, dates))
+
+def buildPlot(data_queue):
+    print("hi")
+    fig, ax = plt.subplots(3, 1)
+    x = np.zeros(1)
+
+    voltageTraceLines = []
+    currentTraceLines = []
+    for i in range(5):
+        voltageTLine, = ax[0].plot(x, np.zeros(1), color='gray')
+        voltageTraceLines.append(voltageTLine)
+    line1, = ax[0].plot(x, np.zeros(1))
+    for i in range(5):
+        currentTLine, = ax[1].plot(x, np.zeros(1), color='gray')
+        currentTraceLines.append(currentTLine)
+    line2, = ax[1].plot(x, np.zeros(1))
+    line3, = ax[2].plot(np.zeros(1000), np.zeros(1000))
+
+    ax[0].set_xlim([-20, 400])
+    ax[0].set_ylim([-0.01, 0.05])
+    ax[1].set_xlim([-20, 400])
+    ax[1].set_ylim([-1E-9, 5e-9])
+    ax[2].set_xlim([-10, 1010])
+    ax[2].set_ylim([-10, 3000])
+
+    
+    plt.ion()
+    #self.plot_thread = threading.Thread(target=self.animatePlot, args=(fig, line1, line2, line3, voltageTraceLines, currentTraceLines))
+    animation = FuncAnimation(fig, updatePlot, fargs=(data_queue, line1, line2, line3, voltageTraceLines, currentTraceLines), interval=1000/60, blit=True)
+    #self.plot_thread.start()
+    
+    #plt.show(block=False)
+    plt.show() 
+
+def animatePlot(self, fig, line1, line2, line3, voltageTraceLines, currentTraceLines):
+    animation = FuncAnimation(fig, self.updatePlot, fargs=(self.data_queue, line1, line2, line3, voltageTraceLines, currentTraceLines), interval=1000/60)
+    
+def updatePlot(self, frame, data_queue, line1, line2, line3, voltageTraceLines, currentTraceLines):
+    try:
+        while not data_queue.empty():
+            voltage, current, voltageTrace, currentTrace, resistanceHistory, transientHistory, dates = data_queue.get_nowait()
+            
+            line1.set_xdata(np.arange(len(voltage)))
+            line1.set_ydata(voltage)
+            line2.set_xdata(np.arange(len(current)))
+            line2.set_ydata(current)
+            line3.set_xdata(np.arange(len(resistanceHistory)))
+            line3.set_ydata(resistanceHistory)
+            if transientHistory[-1]:
+                line3.set_color('green')
+            else:
+                line3.set_color('red')
+            if len(voltageTrace) >= 5:
+                for i in range(5):
+                    voltageTraceLines[i].set_xdata(np.arange(len(voltageTrace[i])))
+                    voltageTraceLines[i].set_ydata(voltageTrace[i])
+                    currentTraceLines[i].set_xdata(np.arange(len(currentTrace[i])))
+                    currentTraceLines[i].set_ydata(currentTrace[i])
+            #plt.draw()
+            plt.pause(0.05)
+    except queue.Empty:
+        pass# return line1, line2, line3,
+
+    return line1, line2, line3,
 
 machine = SimpleDevice()
-
+p = multiprocessing.Process(None, target=buildPlot, args=(machine.data_queue,))
 try:
+    p.start()
     while True:
-        
         machine.on_event('')
-        machine.updatePlotIndependent()
-        print(machine.state)
+        #print(machine.state)
 except KeyboardInterrupt:
     machine.wb.__del__()
+    #p.join()
     raise("Ctrl- C, Terminating")
 # Every state returns the next state
 # While loop runs outside state machine
