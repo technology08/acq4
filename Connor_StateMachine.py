@@ -57,7 +57,7 @@ class CaptureState(State):
 
             return self
         
-        if time.perf_counter() - self.init_time > 5:
+        if time.perf_counter() - self.init_time > 500:
             cleared = input("Has capture pipette acquired a cell? (y/n) ")
             
             if cleared == 'y':
@@ -81,11 +81,11 @@ class HuntState(State):
     totalZMovement = 0 # ,
 
     def on_event(self, event):
-        data_queue = event
-        resistances = data_queue.get_nowait()[4]
+        machine : SimpleDevice = event
+        machine.processQueue()
+        resistances = machine.resistanceHistory
 
         if self.baselineResistance is None or self.counter < 10: 
-            #self.file.write(datetime.datetime.now().isoformat(' ') + ' ' + self.__str__() + ' ' + str(round(arrayAverage(resistances), 2)) + '\n')
             self.baselineResistance = sum(resistances[-10:-1]) / len(resistances[-10:-1])  
             self.counter += 1    
         else:
@@ -96,16 +96,14 @@ class HuntState(State):
             
             if newResistance < 0.01 * self.baselineResistance:
                 print("Abort!")
-                #self.file.close()
                 return AbortState(self.wb)
             elif newResistance > 1.3 * self.baselineResistance:
                 print("Seal")
-                #self.file.close()
                 raise ValueError("something")
                 return SealState(self.wb)
             elif self.totalZMovement > 100:
-                #self.file.close()
                 raise ValueError("End!")
+                return CleanState(self.wb)
 
         return self
     
@@ -124,8 +122,9 @@ class SealState(State):
 
             return self
         
-        data_queue = event
-        resistances = data_queue.get_nowait()[4]
+        machine : SimpleDevice = event
+        machine.processQueue()
+        resistances = machine.resistanceHistory
         
         if time.perf_counter() - self.init_time > 2:
             if not self.suction:
@@ -137,7 +136,6 @@ class SealState(State):
                 return self
             else: 
                 newResistance = resistances[-1]
-                #self.file.write(datetime.datetime.now().isoformat(' ') + ' ' + self.__str__() + ' ' + str(round(arrayAverage(newResistance), 2)) + '\n')
                 if newResistance > 1e3: 
                     return BreakInState(self.wb)
                 elif time.perf_counter() - self.init_time > 20:
@@ -153,6 +151,8 @@ class BreakInState(State):
     attempts = 0
 
     def on_event(self, event):
+        machine : SimpleDevice = event
+
         if self.configured == False:
             self.init_time = time.perf_counter()
             #self.wb.pressureController.writeMessageSwitch("atmosphere 1")
@@ -170,8 +170,10 @@ class BreakInState(State):
             #newResistance = self.wb.measureResistance(60)
             
             #transient_present = self.wb.measureTransient(60)
-            newResistance = event[4][-1]
-            transient_present = event[5][-1]
+
+            machine.processQueue()
+            newResistance = machine.resistanceHistory[-1]
+            transient_present = machine.transientHistory[-1]
 
             # Measure transient!
             if transient_present:
@@ -219,14 +221,13 @@ class SimpleDevice(object):
         self.file = open('resistance.txt', 'w')
         self.file.write('Experiment commencing at ' + datetime.datetime.now().isoformat() +'\n')
         self.file.close()
-        self.data_queue = None
         self.file = open('resistance.txt', 'a')
         # Start with a default state.
        
         self.state = CaptureState(self.wb)
         self.data_queue = queue.Queue(100)
         self.streamPulses()
-        self.on_event('configure_capture')
+        #self.on_event('')
 
     def __del__(self):
         self.file.close()
@@ -246,11 +247,8 @@ class SimpleDevice(object):
         then assigned as the new state.
         """
 
-        # The next state will be the result of the on_event function.
-        if self.data_queue is not None:
-            self.state = self.state.on_event(self.data_queue)
-        else:
-            self.state = self.state.on_event(event)
+        # The next state will be the result of the on_event function. Pass in device as arg
+        self.state = self.state.on_event(self)
 
     def streamPulses(self):
         frequency = 60
@@ -267,13 +265,26 @@ class SimpleDevice(object):
         self.acquisition_thread = threading.Thread(target=self.acquireData, args=(self.data_queue, period, self.stop_event))
         self.acquisition_thread.start()
 
-        fig, self.ax = plt.subplots(3, 1)
+        #fig, self.ax = plt.subplots(3, 1)
         x = np.zeros(1)
         self.voltage = [0 for _ in range(350)]
         self.current = [0 for _ in range(350)]
         self.resistanceHistory = [0 for _ in range(1000)]
         self.transientHistory = [0 for _ in range(1000)]
         self.dates = [0 for _ in range(1000)]
+
+        #self.ax = [0,0,0,0]
+        #self.ax[0] = plt.subplot(321)
+        #self.ax[1] = plt.subplot(322)
+        #self.ax[2] = plt.subplot(323)
+        #self.ax[3] = plt.subplot(121)
+
+        fig, self.ax = plt.subplot_mosaic([[0, 3],
+                                           [1, 3],
+                                           [2, 3]],
+                                            figsize=(5.5, 3.5), layout='constrained')
+
+        self.cameraConfigured = False
 
         self.line1, = self.ax[0].plot(x, np.zeros(1))
         self.line2, = self.ax[1].plot(x, np.zeros(1))
@@ -308,10 +319,9 @@ class SimpleDevice(object):
             megasurement = resistances[0] / 1e6
             date = datetime.datetime.now()
             data_queue.put((voltage_sent, current_read, megasurement, transient_present, date))
-          
-    def updatePlot(self):
+    
+    def processQueue(self):
         if not self.data_queue.empty():
-            print(self.data_queue.qsize())
             while not self.data_queue.empty():
                 self.voltage, self.current, resistance, transientPresent, date = self.data_queue.get_nowait()
                 print(self.data_queue.qsize())
@@ -326,31 +336,59 @@ class SimpleDevice(object):
                 self.resistanceHistory.append(resistance)
                 self.dates.append(date)
                 self.transientHistory.append(transientPresent)
-
-            self.line1.set_xdata(np.arange(len(self.voltage)))
-            self.line1.set_ydata(self.voltage)
-            self.line2.set_xdata(np.arange(len(self.current)))
-            self.line2.set_ydata(self.current)
-
-            self.line3.set_xdata(np.arange(len(self.resistanceHistory)))
-            self.line3.set_ydata(self.resistanceHistory)
-
-            self.ax[0].set_title(self.dates[-1].isoformat(' '))
-
-            if self.transientHistory[-1]:
-                self.line3.set_color('green')
-            else:
-                self.line3.set_color('red')
-            
-            plt.pause(0.001)
         else:
             pass
+
+    def updatePlot(self):
+        self.processQueue()
+
+        self.line1.set_xdata(np.arange(len(self.voltage)))
+        self.line1.set_ydata(self.voltage)
+        self.line2.set_xdata(np.arange(len(self.current)))
+        self.line2.set_ydata(self.current)
+
+        self.line3.set_xdata(np.arange(len(self.resistanceHistory)))
+        self.line3.set_ydata(self.resistanceHistory)
+
+        self.ax[0].set_title(self.dates[-1].isoformat(' '))
+
+        if self.transientHistory[-1]:
+            self.line3.set_color('green')
+        else:
+            self.line3.set_color('red')
+
+        self.frame = self.wb.camera._acquireFrames(1)[0]
+        self.camera_date = datetime.datetime.now()
+
+        if not self.cameraConfigured:
+            self.cam_img = self.ax[3].imshow(self.frame, interpolation='nearest')
+            self.ax[3].set_title(self.camera_date.isoformat(' '))
+            self.cameraConfigured = True
+        
+        else:
+            self.cam_img.set_data(self.frame)
+            self.ax[3].set_title(self.camera_date.isoformat(' '))
+            #self.cam_ax.draw()
+        
+        plt.pause(0.001)
+
+    def captureFrame(self):
+        self.camera_thread = threading.Thread(target=self._acquireFrame)
+        self.camera_thread.start()
+
+    def _acquireFrame(self):
+        self.frame = self.wb.camera._acquireFrames(1)[0]
+        self.camera_date = datetime.datetime.now()
+
+
+
 
 machine = SimpleDevice()
 
 try:
     while True:
         machine.on_event('')
+        #machine.captureFrame()
         machine.updatePlot()
         print(machine.state)
 except KeyboardInterrupt:
