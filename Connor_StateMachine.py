@@ -291,10 +291,8 @@ class SimpleDevice(object):
     # DATAQUEUE:
     # voltage_sent: Voltage reading of last pulse
     # current_read: Current reading of last pulse
-    # voltageTrace: Array of last 10 voltage_sent
-    # currentTrace: Array of last 10 current_sent
-    # resistanceHistory: Array of last 1000 resistances
-    # dates: Last 100 timestamps. Each maps to resistance measurement: last 10 to traces, last one to current measurement
+    # resistance: Resistance measure in megaohms
+    # date: Timestamp
 
     def acquireData(self, data_queue, period, stop_recording):
         while not stop_recording.is_set():
@@ -311,7 +309,7 @@ class SimpleDevice(object):
             date = datetime.datetime.now()
             data_queue.put((voltage_sent, current_read, megasurement, transient_present, date))
           
-    def updatePlotIndependent(self):
+    def updatePlot(self):
         if not self.data_queue.empty():
             print(self.data_queue.qsize())
             while not self.data_queue.empty():
@@ -353,7 +351,7 @@ machine = SimpleDevice()
 try:
     while True:
         machine.on_event('')
-        machine.updatePlotIndependent()
+        machine.updatePlot()
         print(machine.state)
 except KeyboardInterrupt:
     machine.wb.__del__()
