@@ -149,6 +149,9 @@ class MicroManagerCamera(Camera):
         self.lastFrame = frames[-1]
         self.lastFrameTime = now
         return frames
+    
+    def currentFrame(self):
+        return self.mmc.getLastImage().T
 
     def quit(self):
         self.mmc.stopSequenceAcquisition()

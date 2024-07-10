@@ -277,12 +277,12 @@ class SimpleDevice(object):
         #self.ax[0] = plt.subplot(321)
         #self.ax[1] = plt.subplot(322)
         #self.ax[2] = plt.subplot(323)
-        #self.ax[3] = plt.subplot(121)
-
-        fig, self.ax = plt.subplot_mosaic([[0, 3],
-                                           [1, 3],
-                                           [2, 3]],
-                                            figsize=(5.5, 3.5), layout='constrained')
+        #self.ax[3] = plt.subplot(324)
+        fig, self.ax = plt.subplots(4, 1)
+        #fig2, self.ax2 = plt.subplot_mosaic([[0, 3],
+        #                                   [1, 3],
+        #                                   [2, 3]],
+        #                                    figsize=(5.5, 3.5), layout='constrained')
 
         self.cameraConfigured = False
 
@@ -296,6 +296,8 @@ class SimpleDevice(object):
         self.ax[1].set_ylim([-1E-9, 5e-9])
         self.ax[2].set_xlim([-10, 101])
         self.ax[2].set_ylim([-10, 3000])
+
+        self.wb.camera.startCamera()
 
         plt.show(block=False)
 
@@ -322,9 +324,10 @@ class SimpleDevice(object):
     
     def processQueue(self):
         if not self.data_queue.empty():
+            print(self.data_queue.qsize())
             while not self.data_queue.empty():
                 self.voltage, self.current, resistance, transientPresent, date = self.data_queue.get_nowait()
-                print(self.data_queue.qsize())
+                
                 
                 if len(self.resistanceHistory) >= 100:
                     self.resistanceHistory = self.resistanceHistory[-99:-1]
@@ -357,18 +360,20 @@ class SimpleDevice(object):
         else:
             self.line3.set_color('red')
 
-        self.frame = self.wb.camera._acquireFrames(1)[0]
-        self.camera_date = datetime.datetime.now()
+        #self.frame = self.wb.camera._acquireFrames(1)[0]
+        
+        newFrames = self.wb.camera.currentFrame()
+        lastFrame = newFrames# [-1]
+        frame = lastFrame# ['data']
+        camera_date = datetime.datetime.now()
 
         if not self.cameraConfigured:
-            self.cam_img = self.ax[3].imshow(self.frame, interpolation='nearest')
-            self.ax[3].set_title(self.camera_date.isoformat(' '))
+            self.cam_img = self.ax[3].imshow(frame, interpolation='nearest')
+            self.ax[3].set_title(camera_date.isoformat(' '))
             self.cameraConfigured = True
-        
         else:
-            self.cam_img.set_data(self.frame)
-            self.ax[3].set_title(self.camera_date.isoformat(' '))
-            #self.cam_ax.draw()
+            self.cam_img.set_data(frame)
+            self.ax[3].set_title(camera_date.isoformat(' '))
         
         plt.pause(0.001)
 
@@ -387,6 +392,7 @@ machine = SimpleDevice()
 
 try:
     while True:
+        machine.processQueue()
         machine.on_event('')
         #machine.captureFrame()
         machine.updatePlot()
