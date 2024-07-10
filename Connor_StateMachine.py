@@ -230,10 +230,12 @@ class SimpleDevice(object):
         #self.on_event('')
 
     def __del__(self):
+        self.future.stop()
+        self.wb.camera.stopCamera()
         self.file.close()
         self.stop_event.set()
         self.acquisition_thread.join()
-        #self.plot_thread.join()
+        print("Terminating program.")
 
     def initVoltClamp(self):
         self.wb.voltageClamp()
@@ -298,6 +300,11 @@ class SimpleDevice(object):
         self.ax[2].set_ylim([-10, 3000])
 
         self.wb.camera.startCamera()
+    
+        self.future = self.wb.camera.acquireFrames(None)
+        #self.frame = None
+        #self.cam_q = queue.Queue()
+        #self.captureFrame()
 
         plt.show(block=False)
 
@@ -362,31 +369,23 @@ class SimpleDevice(object):
 
         #self.frame = self.wb.camera._acquireFrames(1)[0]
         
-        newFrames = self.wb.camera.currentFrame()
-        lastFrame = newFrames# [-1]
-        frame = lastFrame# ['data']
-        camera_date = datetime.datetime.now()
-
-        if not self.cameraConfigured:
-            self.cam_img = self.ax[3].imshow(frame, interpolation='nearest')
-            self.ax[3].set_title(camera_date.isoformat(' '))
-            self.cameraConfigured = True
-        else:
-            self.cam_img.set_data(frame)
-            self.ax[3].set_title(camera_date.isoformat(' '))
         
+        camera_date = datetime.datetime.now()
+        #if not self.cam_q.empty():
+        lastFrame = self.future.peekAtResult()
+        if len(lastFrame) > 0:
+            print("Frame!")
+            lastFrame = lastFrame[-1]
+            if not self.cameraConfigured:
+                self.cam_img = self.ax[3].imshow(lastFrame, interpolation='nearest')
+                self.ax[3].set_title(camera_date.isoformat(' '))
+                self.cameraConfigured = True
+            else:
+                self.cam_img.set_data(lastFrame)
+                self.ax[3].set_title(camera_date.isoformat(' '))
+        else:
+            print("No frames")
         plt.pause(0.001)
-
-    def captureFrame(self):
-        self.camera_thread = threading.Thread(target=self._acquireFrame)
-        self.camera_thread.start()
-
-    def _acquireFrame(self):
-        self.frame = self.wb.camera._acquireFrames(1)[0]
-        self.camera_date = datetime.datetime.now()
-
-
-
 
 machine = SimpleDevice()
 
