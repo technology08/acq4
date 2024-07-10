@@ -216,15 +216,14 @@ class SimpleDevice(object):
     def __init__(self):
         """ Initialize the components. """
         self.wb = Workbench()
-        #self.file = open('resistance.txt', 'w')
-        #self.file.write('Experiment commencing at ' + datetime.datetime.now().isoformat() +'\n')
-        #self.file.close()
+        self.file = open('resistance.txt', 'w')
+        self.file.write('Experiment commencing at ' + datetime.datetime.now().isoformat() +'\n')
+        self.file.close()
         self.data_queue = None
         self.file = open('resistance.txt', 'a')
         # Start with a default state.
        
         self.state = CaptureState(self.wb)
-        #self.initVoltClamp()
         self.data_queue = queue.Queue(100)
         self.streamPulses()
         self.on_event('configure_capture')
@@ -251,7 +250,7 @@ class SimpleDevice(object):
         if self.data_queue is not None:
             self.state = self.state.on_event(self.data_queue)
         else:
-            self.state = self.state.on_event(event)#self.resistance)
+            self.state = self.state.on_event(event)
 
     def streamPulses(self):
         frequency = 60
@@ -287,41 +286,31 @@ class SimpleDevice(object):
         self.ax[2].set_xlim([-10, 101])
         self.ax[2].set_ylim([-10, 3000])
 
-        
-        #plt.ion()
-        #self.plot_thread = threading.Thread(target=self.animatePlot, args=(fig, line1, line2, line3, voltageTraceLines, currentTraceLines))
-        #animation = FuncAnimation(fig, self.updatePlot, fargs=(self.data_queue, line1, line2, line3), interval=1000/1, blit=True)
-        #self.plot_thread.start()
-        
-        #plt.show()
         plt.show(block=False)
-        
 
-    def animatePlot(self, fig, line1, line2, line3, voltageTraceLines, currentTraceLines):
-        animation = FuncAnimation(fig, self.updatePlot, fargs=(self.data_queue, line1, line2, line3, voltageTraceLines, currentTraceLines), interval=1000/60)
-        
-    def updatePlot(self, frame, data_queue, line1, line2, line3):
-        try:
-            while not data_queue.empty():
-                voltage, current, voltageTrace, currentTrace, resistanceHistory, transientHistory, dates = data_queue.get_nowait()
-                
-                line1.set_xdata(np.arange(len(voltage)))
-                line1.set_ydata(voltage)
-                line2.set_xdata(np.arange(len(current)))
-                line2.set_ydata(current)
-                line3.set_xdata(np.arange(len(resistanceHistory)))
-                line3.set_ydata(resistanceHistory)
-                if transientHistory[-1]:
-                    line3.set_color('green')
-                else:
-                    line3.set_color('red')
-                #plt.draw()
-                plt.pause(0.05)
-        except queue.Empty:
-            pass# return line1, line2, line3,
+    # DATAQUEUE:
+    # voltage_sent: Voltage reading of last pulse
+    # current_read: Current reading of last pulse
+    # voltageTrace: Array of last 10 voltage_sent
+    # currentTrace: Array of last 10 current_sent
+    # resistanceHistory: Array of last 1000 resistances
+    # dates: Last 100 timestamps. Each maps to resistance measurement: last 10 to traces, last one to current measurement
 
-        return line1, line2, line3
-    
+    def acquireData(self, data_queue, period, stop_recording):
+        while not stop_recording.is_set():
+            _, voltage_data = self.wb.sendPulse(1, 1, period)
+
+            voltage_sent = voltage_data[0][1]
+            voltage_read = voltage_data[0][0]
+
+            voltage_sent = voltage_sent * self.wb.clamp.getState()['secondaryScaleFactor']
+            current_read = voltage_read * self.wb.clamp.getState()['primaryScaleFactor']
+            
+            resistances, transient_present = self.wb.calculateResistance(voltage_sent, current_read, 1)
+            megasurement = resistances[0] / 1e6
+            date = datetime.datetime.now()
+            data_queue.put((voltage_sent, current_read, megasurement, transient_present, date))
+          
     def updatePlotIndependent(self):
         if not self.data_queue.empty():
             print(self.data_queue.qsize())
@@ -354,63 +343,15 @@ class SimpleDevice(object):
                 self.line3.set_color('green')
             else:
                 self.line3.set_color('red')
-            #plt.draw()
+            
             plt.pause(0.001)
         else:
-            print("Queue empty ")
-            pass# return line1, line2, line3,
-
-        #return line1, line2, line3
-    
-    # DATAQUEUE:
-    # voltage_sent: Voltage reading of last pulse
-    # current_read: Current reading of last pulse
-    # voltageTrace: Array of last 10 voltage_sent
-    # currentTrace: Array of last 10 current_sent
-    # resistanceHistory: Array of last 1000 resistances
-    # dates: Last 100 timestamps. Each maps to resistance measurement: last 10 to traces, last one to current measurement
-
-    def acquireData(self, data_queue, period, stop_recording):
-        #voltageTrace = []
-        #currentTrace = []
-        #resistanceHistory = [0 for _ in range(100)]
-        #transientHistory = [0 for _ in range(100)]
-        #dates = [0 for _ in range(100)]
-        
-        while not stop_recording.is_set():
-            _, voltage_data = self.wb.sendPulse(1, 1, period)
-
-            voltage_sent = voltage_data[0][1]
-            voltage_read = voltage_data[0][0]
-
-            voltage_sent = voltage_sent * self.wb.clamp.getState()['secondaryScaleFactor']
-            current_read = voltage_read * self.wb.clamp.getState()['primaryScaleFactor']
-
-            #if len(resistanceHistory) >= 100:
-            #    resistanceHistory = resistanceHistory[-99:-1]
-            #if len(dates) >= 100:
-            #    dates = dates[-99:-1]
-            #if len(transientHistory) >= 100:
-            #    transientHistory = dates[-99:-1]
-
-            #voltageTrace.append(voltage_sent)
-            #currentTrace.append(current_read)
-            
-            resistances, transient_present = self.wb.calculateResistance(voltage_sent, current_read, 1)
-            #print("Resistances 2: ", round(resistances[0] / 1e6, 2))
-            megasurement = resistances[0] / 1e6
-            #resistanceHistory.append(megasurement)
-            #transientHistory.append(transient_present)
-            date = datetime.datetime.now()
-            #dates.append(date)
-            #self.file.write(date.isoformat(' ') + ' ' + self.state.__str__() + ' ' + str(round(megasurement, 2)) + '\n')
-            data_queue.put((voltage_sent, current_read, megasurement, transient_present, date))
+            pass
 
 machine = SimpleDevice()
 
 try:
     while True:
-        
         machine.on_event('')
         machine.updatePlotIndependent()
         print(machine.state)
