@@ -275,16 +275,10 @@ class SimpleDevice(object):
         self.transientHistory = [0 for _ in range(1000)]
         self.dates = [0 for _ in range(1000)]
 
-        #self.ax = [0,0,0,0]
-        #self.ax[0] = plt.subplot(321)
-        #self.ax[1] = plt.subplot(322)
-        #self.ax[2] = plt.subplot(323)
-        #self.ax[3] = plt.subplot(324)
-        fig, self.ax = plt.subplots(4, 1)
-        #fig2, self.ax2 = plt.subplot_mosaic([[0, 3],
-        #                                   [1, 3],
-        #                                   [2, 3]],
-        #                                    figsize=(5.5, 3.5), layout='constrained')
+        self.fig, self.ax = plt.subplot_mosaic([[0, 3],
+                                           [1, 3],
+                                           [2, 3]],
+                                            figsize=(10, 5), layout='constrained')
         #fig.canvas.mpl_connect('close_event', self.__del__())
         self.cameraConfigured = False
 
@@ -298,10 +292,16 @@ class SimpleDevice(object):
         self.ax[1].set_ylim([-1E-9, 5e-9])
         self.ax[2].set_xlim([-10, 101])
         self.ax[2].set_ylim([-10, 3000])
+        self.cam_img = self.ax[3].imshow(np.full((512,512), np.nan), cmap='gray', vmin=0, vmax=255)
 
-        #self.wb.camera.startCamera()
+        self.fig.canvas.draw()
+
+        self.ax0background  = self.fig.canvas.copy_from_bbox(self.ax[0].bbox)
+        self.ax1background  = self.fig.canvas.copy_from_bbox(self.ax[1].bbox)
+        self.ax2background  = self.fig.canvas.copy_from_bbox(self.ax[2].bbox)
+        self.aximbackground = self.fig.canvas.copy_from_bbox(self.ax[3].bbox)
+
         self.wb.camera.start()
-    
         self.future = self.wb.camera.acquireFrames(None)
 
         plt.show(block=False)
@@ -365,31 +365,32 @@ class SimpleDevice(object):
         else:
             self.line3.set_color('red')
 
-        #self.frame = self.wb.camera._acquireFrames(1)[0]
-        
-        
         camera_date = datetime.datetime.now()
         lastFrames = self.future.getStreamingResults()
-        #print("Last Frames Len: ", len(lastFrames))
         
         if len(lastFrames) > 0:
-           
             lastFrame = lastFrames[-1].data()
-            #print("Frame Size: ", len(lastFrame))
             decimationFactor = 4
             decimatedFrame = lastFrame[::decimationFactor,::decimationFactor]
-            
-            if not self.cameraConfigured:
-                self.cam_img = self.ax[3].imshow(decimatedFrame, interpolation='nearest')
-                self.ax[3].set_title(camera_date.isoformat(' '))
-                self.cameraConfigured = True
-            else:
-                self.cam_img.set_data(decimatedFrame)
-                self.ax[3].set_title(camera_date.isoformat(' '))
-                pass
-        else:
-            print("No frames")
-        plt.pause(0.001)
+            self.cam_img.set_data(decimatedFrame)
+            self.ax[3].set_title(camera_date.isoformat(' '))   
+
+        self.fig.canvas.restore_region(self.ax0background )
+        self.fig.canvas.restore_region(self.ax1background )
+        self.fig.canvas.restore_region(self.ax2background )
+        self.fig.canvas.restore_region(self.aximbackground)
+
+        self.ax[0].draw_artist(self.line1)
+        self.ax[1].draw_artist(self.line2)
+        self.ax[2].draw_artist(self.line3)
+        self.ax[3].draw_artist(self.cam_img)
+
+        self.fig.canvas.blit(self.ax[0].bbox)
+        self.fig.canvas.blit(self.ax[1].bbox)
+        self.fig.canvas.blit(self.ax[2].bbox)
+        self.fig.canvas.blit(self.ax[3].bbox)
+        
+        self.fig.canvas.flush_events()
 
 machine = SimpleDevice()
 
@@ -397,7 +398,6 @@ try:
     while True:
         machine.processQueue()
         machine.on_event('')
-        #machine.captureFrame()
         machine.updatePlot()
         #print(machine.state)
 except KeyboardInterrupt:
