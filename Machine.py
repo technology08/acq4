@@ -28,17 +28,17 @@ class Machine(object):
         self.file = open('resistance.txt', 'a')
         # Start with a default state.
        
-        self.state = CaptureState(self.wb, self)
+        self.state = EnterBathState(self.wb, self)#CaptureState(self.wb, self)
         self.data_queue = queue.Queue(100)
-        self.streamPulses()
-        #self.on_event('')
+        self.streamVoltagePulses()
+        self.configurePlot()
 
     def __del__(self):
         self.future.stop()
         self.wb.camera.stopCamera()
         self.file.close()
         self.stop_event.set()
-        self.acquisition_thread.join()
+        self.voltage_acquisition_thread.join()
         print("Terminating program.")
 
     def on_event(self, event):
@@ -51,7 +51,7 @@ class Machine(object):
         # The next state will be the result of the on_event function. Pass in device as arg
         self.state = self.state.on_event(event)
 
-    def streamPulses(self):
+    def streamVoltagePulses(self):
         frequency = 60
         period = 1 / frequency
 
@@ -63,55 +63,17 @@ class Machine(object):
 
         self.stop_event = threading.Event()
 
-        self.acquisition_thread = threading.Thread(target=self.acquireData, args=(self.data_queue, period, self.stop_event))
-        self.acquisition_thread.start()
+        self.voltage_acquisition_thread = threading.Thread(target=self.acquireVoltageClampData, args=(self.data_queue, period, self.stop_event))
+        self.voltage_acquisition_thread.start()
 
-        #fig, self.ax = plt.subplots(3, 1)
-        x = np.zeros(1)
-        self.voltage = [0 for _ in range(350)]
-        self.current = [0 for _ in range(350)]
-        self.resistanceHistory = [0 for _ in range(1000)]
-        self.transientHistory = [0 for _ in range(1000)]
-        self.dates = [0 for _ in range(1000)]
-
-        self.fig, self.ax = plt.subplot_mosaic([[0, 3],
-                                           [1, 3],
-                                           [2, 3]],
-                                            figsize=(10, 5), layout='constrained')
-        #fig.canvas.mpl_connect('close_event', self.__del__())
-        self.cameraConfigured = False
-
-        self.line1, = self.ax[0].plot(x, np.zeros(1))
-        self.line2, = self.ax[1].plot(x, np.zeros(1))
-        self.line3, = self.ax[2].plot(np.zeros(1000), np.zeros(1000))
     
-        self.ax[0].set_xlim([-20, 400])
-        self.ax[0].set_ylim([-0.01, 0.05])
-        self.ax[1].set_xlim([-20, 400])
-        self.ax[1].set_ylim([-1E-9, 5e-9])
-        self.ax[2].set_xlim([-10, 101])
-        self.ax[2].set_ylim([-10, 3000])
-        self.cam_img = self.ax[3].imshow(np.full((512,512), np.nan), cmap='gray', vmin=0, vmax=255)
-
-        self.fig.canvas.draw()
-
-        self.ax0background  = self.fig.canvas.copy_from_bbox(self.ax[0].bbox)
-        self.ax1background  = self.fig.canvas.copy_from_bbox(self.ax[1].bbox)
-        self.ax2background  = self.fig.canvas.copy_from_bbox(self.ax[2].bbox)
-        self.aximbackground = self.fig.canvas.copy_from_bbox(self.ax[3].bbox)
-
-        self.wb.camera.start()
-        self.future = self.wb.camera.acquireFrames(None)
-
-        plt.show(block=False)
-
     # DATAQUEUE:
     # voltage_sent: Voltage reading of last pulse
     # current_read: Current reading of last pulse
     # resistance: Resistance measure in megaohms
     # date: Timestamp
 
-    def acquireData(self, data_queue, period, stop_recording):
+    def acquireVoltageClampData(self, data_queue, period, stop_recording):
         while not stop_recording.is_set():
             _, voltage_data = self.wb.sendPulse(1, 1, period)
 
@@ -145,6 +107,44 @@ class Machine(object):
                 self.transientHistory.append(transientPresent)
         else:
             print(0)
+
+    def configurePlot(self):
+        x = np.zeros(1)
+        self.voltage = [0 for _ in range(350)]
+        self.current = [0 for _ in range(350)]
+        self.resistanceHistory = [0 for _ in range(1000)]
+        self.transientHistory = [0 for _ in range(1000)]
+        self.dates = [0 for _ in range(1000)]
+
+        self.fig, self.ax = plt.subplot_mosaic([[0, 3],
+                                           [1, 3],
+                                           [2, 3]],
+                                            figsize=(10, 5), layout='constrained')
+        #fig.canvas.mpl_connect('close_event', self.__del__())
+
+        self.line1, = self.ax[0].plot(x, np.zeros(1))
+        self.line2, = self.ax[1].plot(x, np.zeros(1))
+        self.line3, = self.ax[2].plot(np.zeros(1000), np.zeros(1000))
+    
+        self.ax[0].set_xlim([-20, 400])
+        self.ax[0].set_ylim([-0.01, 0.05])
+        self.ax[1].set_xlim([-20, 400])
+        self.ax[1].set_ylim([-1E-9, 5e-9])
+        self.ax[2].set_xlim([-10, 101])
+        self.ax[2].set_ylim([-10, 3000])
+        self.cam_img = self.ax[3].imshow(np.full((512,512), np.nan), cmap='gray', vmin=0, vmax=255)
+
+        self.fig.canvas.draw()
+
+        self.ax0background  = self.fig.canvas.copy_from_bbox(self.ax[0].bbox)
+        self.ax1background  = self.fig.canvas.copy_from_bbox(self.ax[1].bbox)
+        self.ax2background  = self.fig.canvas.copy_from_bbox(self.ax[2].bbox)
+        self.aximbackground = self.fig.canvas.copy_from_bbox(self.ax[3].bbox)
+
+        self.wb.camera.start()
+        self.future = self.wb.camera.acquireFrames(None)
+
+        plt.show(block=False)
 
     def updatePlot(self):
         self.processQueue()

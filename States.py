@@ -1,4 +1,4 @@
-from Workbench import Workbench
+from Workbench import Workbench, arrayAverage
 from Machine import Machine
 import time
 
@@ -33,7 +33,28 @@ class State(object):
         Returns the name of the State.
         """
         return self.__class__.__name__
-    
+
+class EnterBathState(State):
+    ambientResistance = None 
+
+    def on_event(self, event):
+        if self.ambientResistance is None:
+            self.ambientResistance = arrayAverage(self.machine.resistanceHistory[-20:-1])
+            return self 
+        
+        self.wb.moveManipulatorOnAxis(2, -5000, 12000, True)
+        
+        newResistance = arrayAverage(self.machine.resistanceHistory[-6:-1])
+
+        if newResistance < 0.01 * self.baselineResistance:
+            self.wb.ps.stop()
+            return CaptureState(self.wb, self.machine)
+        
+        if newResistance[-1] < 50: 
+            time.sleep(1)
+        
+        return self
+
 class CaptureState(State):
     configured = False
     suction = False
@@ -51,9 +72,11 @@ class CaptureState(State):
 
             return self
         
-        if time.perf_counter() - self.init_time > 500:
+        if time.perf_counter() - self.init_time > 5:
+            return HuntState(self.wb, self.machine) # TODO: Remove once user interaction wanted
+        
             cleared = input("Has capture pipette acquired a cell? (y/n) ")
-            
+
             if cleared == 'y':
                 return HuntState(self.wb, self.machine)
             elif cleared == 'n':
@@ -81,20 +104,22 @@ class HuntState(State):
             self.baselineResistance = sum(resistances[-10:-1]) / len(resistances[-10:-1])  
             self.counter += 1    
         else:
-            self.wb.moveManipulatorOnAxis(2, -2, 1, True)
+            self.wb.moveManipulatorOnAxis(2, -2, 10000, True)
             self.totalZMovement += 2
             newResistance = resistances[-1]
             print(newResistance)
             
             if newResistance < 0.01 * self.baselineResistance:
+                self.wb.ps.stop()
                 print("Abort!")
-                return AbortState(self.wb, self.machine)
+                #return AbortState(self.wb, self.machine)
             elif newResistance > 1.3 * self.baselineResistance:
+                self.wb.ps.stop()
                 print("Seal")
-                raise ValueError("something")
+                raise ValueError("Cell found, Seal")
                 return SealState(self.wb, self.machine)
-            elif self.totalZMovement > 100:
-                raise ValueError("End!")
+            elif self.totalZMovement > 10: # TODO: Made easier to trigger for testing
+                self.wb.ps.stop()
                 return CleanState(self.wb, self.machine)
 
         return self
@@ -185,8 +210,55 @@ class WholeCellState(State):
         return self
 
 class CleanState(State):
+    ps1Raised = False 
+    ps1PulledBack = False
+    ps1Hovering = False
+    ps1Lowering = False 
+    cleaned = False
+    clean_start_time = None
+    period_start_time = None
+    cycles = 0
+
     def on_event(self, event):
-        if event == 'device_locked':
+        if not self.ps1Raised:
+            self.wb.moveManipulatorOnAxis(2, 1000, 30000, False)
+            self.ps1Raised = True
+        elif not self.ps1PulledBack and not self.wb.ps.isMoving():
+            self.wb.moveManipulatorOnAxis(0, 20000, 40000, True)
+            self.ps1PulledBack = True
+        elif not self.cleaned and not self.wb.ps.isMoving():
+            # Run clean step
+            current_time = time.perf_counter()
+
+            if self.clean_start_time is None:
+                self.clean_start_time = current_time
+                self.period_start_time = current_time
+                self.wb.pressureController.writeMessageSwitch("atm 1")
+                self.wb.pressureController.setPressure(500, 1)
+                self.wb.pressureController.writeMessageSwitch("pressure 1")
+            elif self.cycles > 5:
+                self.cleaned = True
+                self.wb.pressureController.writeMessageSwitch('atm 1')
+                self.wb.pressureController.setPressure(0, 1)
+                return self
+            # Clean the pipette
+            
+            # Pos pressure for 2 sec , negative for 1 sec, at +500mbar -500mbar
+            if current_time - self.period_start_time >= 3:
+                self.wb.pressureController.setPressure(500, 1)
+                self.period_start_time = current_time
+                self.cycles += 1
+            elif current_time - self.period_start_time >= 2:
+                self.wb.pressureController.setPressure(-500, 1)
+            
+        elif not self.ps1Hovering:
+            self.wb.moveManipulatorOnAxis(0, -20000, 40000, True)
+            self.ps1Hovering = True
+        elif not self.wb.ps.isMoving():
+            self.wb.moveManipulatorOnAxis(2, -1000, 15000, False)
+            self.ps1Lowering = True
+        elif self.ps1Lowering and not self.wb.ps.isMoving():
+            # Returned, move back to CaptureState
             return CaptureState(self.wb, self.machine)
 
         return self
