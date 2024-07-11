@@ -285,7 +285,7 @@ class SimpleDevice(object):
         #                                   [1, 3],
         #                                   [2, 3]],
         #                                    figsize=(5.5, 3.5), layout='constrained')
-
+        #fig.canvas.mpl_connect('close_event', self.__del__())
         self.cameraConfigured = False
 
         self.line1, = self.ax[0].plot(x, np.zeros(1))
@@ -303,9 +303,6 @@ class SimpleDevice(object):
         self.wb.camera.start()
     
         self.future = self.wb.camera.acquireFrames(None)
-        #self.frame = None
-        #self.cam_q = queue.Queue()
-        #self.captureFrame()
 
         plt.show(block=False)
 
@@ -372,23 +369,22 @@ class SimpleDevice(object):
         
         
         camera_date = datetime.datetime.now()
-        #if not self.cam_q.empty():
         lastFrames = self.future.getStreamingResults()
-        print("Last Frames Len: ", len(lastFrames))
+        #print("Last Frames Len: ", len(lastFrames))
         
         if len(lastFrames) > 0:
            
             lastFrame = lastFrames[-1].data()
-            print("Frame Size: ", len(lastFrame))
-            # decimationFactor = 4;
-            # decimatedFrame = lastFrame(1:decimationFactor:end, 1:decimationFactor:end);
+            #print("Frame Size: ", len(lastFrame))
+            decimationFactor = 4
+            decimatedFrame = lastFrame[::decimationFactor,::decimationFactor]
             
             if not self.cameraConfigured:
-                self.cam_img = self.ax[3].imshow(lastFrame, interpolation='nearest')
+                self.cam_img = self.ax[3].imshow(decimatedFrame, interpolation='nearest')
                 self.ax[3].set_title(camera_date.isoformat(' '))
                 self.cameraConfigured = True
             else:
-                self.cam_img.set_data(lastFrame)
+                self.cam_img.set_data(decimatedFrame)
                 self.ax[3].set_title(camera_date.isoformat(' '))
                 pass
         else:
