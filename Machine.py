@@ -1,4 +1,6 @@
 from Workbench import Workbench, arrayAverage
+from States import *
+
 import time
 import datetime
 import threading
@@ -10,206 +12,8 @@ from matplotlib import pyplot as plt
 
 import nest_asyncio
 nest_asyncio.apply()
-
-class State(object):
-    """
-    We define a state object which provides some utility functions for the
-    individual states within the state machine.
-    """
-    wb : Workbench
-
-    def __init__(self, wb):
-        self.wb = wb
-        print('Processing current state:', str(self))
-
-    def on_event(self, event):
-        """
-        Handle events that are delegated to this State.
-        """
-        pass
-
-    def __repr__(self):
-        """
-        Leverages the __str__ method to describe the State.
-        """
-        return self.__str__()
-
-    def __str__(self):
-        """
-        Returns the name of the State.
-        """
-        return self.__class__.__name__
     
-class CaptureState(State):
-    configured = False
-    suction = False
-    init_time = None
-
-    def on_event(self, event):
-        
-        if self.init_time is None:
-            self.init_time = time.perf_counter()
-
-        if not self.configured: 
-            #self.wb.pressureController.setPressure(15, 2)
-            #self.wb.pressureController.writeMessageSwitch("pressure 2")
-            self.configured = True
-
-            return self
-        
-        if time.perf_counter() - self.init_time > 500:
-            cleared = input("Has capture pipette acquired a cell? (y/n) ")
-            
-            if cleared == 'y':
-                return HuntState(self.wb)
-            elif cleared == 'n':
-                return CleanState(self.wb)
-            
-        elif time.perf_counter() - self.init_time > 3:
-            if not self.suction:
-                #self.wb.pressureController.setPressure(-15, 2)
-                self.suction = True
-
-                return self
-          
-        return self
-    
-
-class HuntState(State):
-    baselineResistance = None
-    counter = 0
-    totalZMovement = 0 # ,
-
-    def on_event(self, event):
-        machine : SimpleDevice = event
-        machine.processQueue()
-        resistances = machine.resistanceHistory
-
-        if self.baselineResistance is None or self.counter < 10: 
-            self.baselineResistance = sum(resistances[-10:-1]) / len(resistances[-10:-1])  
-            self.counter += 1    
-        else:
-            self.wb.moveManipulatorOnAxis(2, -2, 1, True)
-            self.totalZMovement += 2
-            newResistance = resistances[-1]
-            print(newResistance)
-            
-            if newResistance < 0.01 * self.baselineResistance:
-                print("Abort!")
-                return AbortState(self.wb)
-            elif newResistance > 1.3 * self.baselineResistance:
-                print("Seal")
-                raise ValueError("something")
-                return SealState(self.wb)
-            elif self.totalZMovement > 100:
-                raise ValueError("End!")
-                return CleanState(self.wb)
-
-        return self
-    
-class SealState(State):
-    init_time = None
-    configured = False
-    suction = False
-
-    def on_event(self, event):
-        if self.init_time is None:
-            self.init_time = time.perf_counter()
-
-        if not self.configured: 
-            #self.wb.pressureController.writeMessageSwitch("atmosphere 1")
-            self.configured = True
-
-            return self
-        
-        machine : SimpleDevice = event
-        machine.processQueue()
-        resistances = machine.resistanceHistory
-        
-        if time.perf_counter() - self.init_time > 2:
-            if not self.suction:
-                #self.wb.pressureController.setPressure(-15, 1)
-                #self.wb.pressureController.writeMessageSwitch("pressure 1")
-                self.suction = True
-                self.init_time = time.perf_counter() # restart timer
-
-                return self
-            else: 
-                newResistance = resistances[-1]
-                if newResistance > 1e3: 
-                    return BreakInState(self.wb)
-                elif time.perf_counter() - self.init_time > 20:
-                    return CleanState(self.wb)
-
-        return self
-    
-class BreakInState(State):
-    
-    configured = False
-    pressureSet = False
-    init_time = None
-    attempts = 0
-
-    def on_event(self, event):
-        machine : SimpleDevice = event
-
-        if self.configured == False:
-            self.init_time = time.perf_counter()
-            #self.wb.pressureController.writeMessageSwitch("atmosphere 1")
-            self.configured = True
-
-            return self
-
-        if time.perf_counter - self.init_time > 1:
-            if not self.pressureSet:
-                #self.wb.pressureController.setPressure(-600, 1)
-                self.pressureSet = True
-                return self
-            
-            #self.wb.pressureController.writeMessageSwitch('breakin 1 300')
-            #newResistance = self.wb.measureResistance(60)
-            
-            #transient_present = self.wb.measureTransient(60)
-
-            machine.processQueue()
-            newResistance = machine.resistanceHistory[-1]
-            transient_present = machine.transientHistory[-1]
-
-            # Measure transient!
-            if transient_present:
-                return WholeCellState(self.wb)
-            elif self.attempts > 10:
-                return CleanState(self.wb)
-            else: 
-                attempts += 1
-
-        return self
-    
-class WholeCellState(State):
-
-    counter = 0
-    measuredBaseResistance = False
-
-    def on_event(self, event):
-        if not self.measuredBaseResistance: 
-            self.wb.currentClamp()
-
-        return self
-
-class CleanState(State):
-    def on_event(self, event):
-        if event == 'device_locked':
-            return CaptureState()
-
-        return self
-    
-class AbortState(State):
-    def on_event(self, event):
-        self.wb.__del__()
-
-        return None
-    
-class SimpleDevice(object):
+class Machine(object):
     """ 
     A simple state machine that mimics the functionality of a device from a 
     high level.
@@ -224,7 +28,7 @@ class SimpleDevice(object):
         self.file = open('resistance.txt', 'a')
         # Start with a default state.
        
-        self.state = CaptureState(self.wb)
+        self.state = CaptureState(self.wb, self)
         self.data_queue = queue.Queue(100)
         self.streamPulses()
         #self.on_event('')
@@ -237,11 +41,6 @@ class SimpleDevice(object):
         self.acquisition_thread.join()
         print("Terminating program.")
 
-    def initVoltClamp(self):
-        self.wb.voltageClamp()
-        self.wb.clamp.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
-        self.wb.clamp.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
-
     def on_event(self, event):
         """
         This is the bread and butter of the state machine. Incoming events are
@@ -250,7 +49,7 @@ class SimpleDevice(object):
         """
 
         # The next state will be the result of the on_event function. Pass in device as arg
-        self.state = self.state.on_event(self)
+        self.state = self.state.on_event(event)
 
     def streamPulses(self):
         frequency = 60
@@ -345,7 +144,7 @@ class SimpleDevice(object):
                 self.dates.append(date)
                 self.transientHistory.append(transientPresent)
         else:
-            pass
+            print(0)
 
     def updatePlot(self):
         self.processQueue()
@@ -358,7 +157,7 @@ class SimpleDevice(object):
         self.line3.set_xdata(np.arange(len(self.resistanceHistory)))
         self.line3.set_ydata(self.resistanceHistory)
 
-        self.ax[0].set_title(self.dates[-1].isoformat(' '))
+        #self.ax[0].set_title(self.dates[-1].isoformat(' '))
 
         if self.transientHistory[-1]:
             self.line3.set_color('green')
@@ -373,7 +172,7 @@ class SimpleDevice(object):
             decimationFactor = 4
             decimatedFrame = lastFrame[::decimationFactor,::decimationFactor]
             self.cam_img.set_data(decimatedFrame)
-            self.ax[3].set_title(camera_date.isoformat(' '))   
+            #self.ax[3].set_title(camera_date.isoformat(' '))   
 
         self.fig.canvas.restore_region(self.ax0background )
         self.fig.canvas.restore_region(self.ax1background )
@@ -392,7 +191,7 @@ class SimpleDevice(object):
         
         self.fig.canvas.flush_events()
 
-machine = SimpleDevice()
+machine = Machine()
 
 try:
     while True:
