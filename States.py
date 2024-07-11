@@ -40,18 +40,25 @@ class EnterBathState(State):
     def on_event(self, event):
         if self.ambientResistance is None:
             self.ambientResistance = arrayAverage(self.machine.resistanceHistory[-20:-1])
+            self.wb.moveManipulatorOnAxis(2, -12000, 1000, False)
             return self 
-        
-        self.wb.moveManipulatorOnAxis(2, -5000, 12000, True)
-        
-        newResistance = arrayAverage(self.machine.resistanceHistory[-6:-1])
 
-        if newResistance < 0.01 * self.baselineResistance:
+        newResistance = arrayAverage(self.machine.resistanceHistory[-6:-1])
+        print(newResistance)
+        if (newResistance < 0.01 * self.ambientResistance) or newResistance < 100:
             self.wb.ps.stop()
+            print("Enter bath!, Stopping pipette!")
             return CaptureState(self.wb, self.machine)
         
-        if newResistance[-1] < 50: 
-            time.sleep(1)
+        if self.wb.ps.getPos()[2] < -5000:
+            print("Abort")
+            raise ValueError("Abort")
+        elif self.wb.ps.getPos()[2] < 0:
+            self.wb.ps.setSpeed(500)
+        
+        if self.machine.resistanceHistory[-1] < 50: 
+            print("one value!")
+            time.sleep(4)
         
         return self
 
@@ -98,13 +105,15 @@ class HuntState(State):
     totalZMovement = 0 # ,
 
     def on_event(self, event):
+        time.sleep(2)
+        return CleanState(self.wb, self.machine)
         resistances = self.machine.resistanceHistory
 
         if self.baselineResistance is None or self.counter < 10: 
             self.baselineResistance = sum(resistances[-10:-1]) / len(resistances[-10:-1])  
             self.counter += 1    
         else:
-            self.wb.moveManipulatorOnAxis(2, -2, 10000, True)
+            self.wb.moveManipulatorOnAxis(2, -2, 10000, False)
             self.totalZMovement += 2
             newResistance = resistances[-1]
             print(newResistance)
@@ -218,47 +227,59 @@ class CleanState(State):
     clean_start_time = None
     period_start_time = None
     cycles = 0
+    pressure1_set = False
+    pressure2_set = False
 
     def on_event(self, event):
         if not self.ps1Raised:
-            self.wb.moveManipulatorOnAxis(2, 1000, 30000, False)
+            self.wb.moveManipulatorOnAxis(2, 10000, 15000, False)
             self.ps1Raised = True
-        elif not self.ps1PulledBack and not self.wb.ps.isMoving():
-            self.wb.moveManipulatorOnAxis(0, 20000, 40000, True)
-            self.ps1PulledBack = True
-        elif not self.cleaned and not self.wb.ps.isMoving():
-            # Run clean step
-            current_time = time.perf_counter()
+        elif not self.ps1PulledBack: 
+            if not self.wb.ps.isMoving():
+                self.wb.moveManipulatorOnAxis(0, 20000, 20000, False)
+                self.ps1PulledBack = True
+        elif not self.cleaned: 
+            if not self.wb.ps.isMoving():
+                # Run clean step
+                current_time = time.perf_counter()
 
-            if self.clean_start_time is None:
-                self.clean_start_time = current_time
-                self.period_start_time = current_time
-                self.wb.pressureController.writeMessageSwitch("atm 1")
-                self.wb.pressureController.setPressure(500, 1)
-                self.wb.pressureController.writeMessageSwitch("pressure 1")
-            elif self.cycles > 5:
-                self.cleaned = True
-                self.wb.pressureController.writeMessageSwitch('atm 1')
-                self.wb.pressureController.setPressure(0, 1)
-                return self
-            # Clean the pipette
-            
-            # Pos pressure for 2 sec , negative for 1 sec, at +500mbar -500mbar
-            if current_time - self.period_start_time >= 3:
-                self.wb.pressureController.setPressure(500, 1)
-                self.period_start_time = current_time
-                self.cycles += 1
-            elif current_time - self.period_start_time >= 2:
-                self.wb.pressureController.setPressure(-500, 1)
-            
+                if self.clean_start_time is None:
+                    self.clean_start_time = current_time
+                    self.period_start_time = current_time
+                    self.wb.pressureController.writeMessageSwitch(b"atm 1")
+                    self.wb.pressureController.setPressure(500, 1)
+                    self.wb.pressureController.writeMessageSwitch(b"pressure 1")
+                elif self.cycles > 5:
+                    self.cleaned = True
+                    self.wb.pressureController.writeMessageSwitch(b'atm 1')
+                    self.wb.pressureController.setPressure(0, 1)
+                    return self
+                # Clean the pipette
+                
+                # Pos pressure for 2 sec , negative for 1 sec, at +500mbar -500mbar
+                if current_time - self.period_start_time >= 3:
+                    if self.pressure2_set == False:
+                        self.wb.pressureController.setPressure(500, 1)
+                        self.period_start_time = current_time
+                        self.cycles += 1
+                        self.pressure2_set = True
+                        self.pressure1_set = False
+                elif current_time - self.period_start_time >= 2:
+                    if self.pressure1_set == False:
+                        self.wb.pressureController.setPressure(-500, 1)
+                        self.pressure1_set = True
+                        self.pressure2_set = False
         elif not self.ps1Hovering:
-            self.wb.moveManipulatorOnAxis(0, -20000, 40000, True)
+            self.wb.moveManipulatorOnAxis(0, -20000, 20000, False)
             self.ps1Hovering = True
-        elif not self.wb.ps.isMoving():
-            self.wb.moveManipulatorOnAxis(2, -1000, 15000, False)
-            self.ps1Lowering = True
-        elif self.ps1Lowering and not self.wb.ps.isMoving():
+        elif not self.ps1Lowering:
+            if not self.wb.ps.isMoving():
+                self.wb.moveManipulatorOnAxis(2, -10000, 10000, False)
+                self.ps1Lowering = True
+        elif self.ps1Lowering and (not self.wb.ps.isMoving() or arrayAverage(self.machine.resistanceHistory[-5:-1]) < 50):
             # Returned, move back to CaptureState
+            if self.wb.ps.isMoving():
+                self.wb.ps.stop() 
             return CaptureState(self.wb, self.machine)
 
         return self

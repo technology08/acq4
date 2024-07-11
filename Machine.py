@@ -1,5 +1,5 @@
 from Workbench import Workbench, arrayAverage
-from States import *
+#from States import EnterBathState, CaptureState, SealState, HuntState, BreakInState, WholeCellState, CleanState
 
 import time
 import datetime
@@ -27,8 +27,8 @@ class Machine(object):
         self.file.close()
         self.file = open('resistance.txt', 'a')
         # Start with a default state.
-       
-        self.state = EnterBathState(self.wb, self)#CaptureState(self.wb, self)
+        self.state = None
+        #self.state = EnterBathState(self.wb, self)#CaptureState(self.wb, self)
         self.data_queue = queue.Queue(100)
         self.streamVoltagePulses()
         self.configurePlot()
@@ -86,6 +86,8 @@ class Machine(object):
             resistances, transient_present = self.wb.calculateResistance(voltage_sent, current_read, 1)
             megasurement = resistances[0] / 1e6
             date = datetime.datetime.now()
+            if self.state is not None:
+                self.file.write(date.isoformat(' ') + ' ' + self.state.__str__() + ' ' + str(round(megasurement, 2)) + '\n')
             data_queue.put((voltage_sent, current_read, megasurement, transient_present, date))
     
     def processQueue(self):
@@ -184,24 +186,16 @@ class Machine(object):
         self.ax[2].draw_artist(self.line3)
         self.ax[3].draw_artist(self.cam_img)
 
+        self.ax[1].relim()
+        # update ax.viewLim using the new dataLim
+        #self.ax[1].autoscale_view()
+
         self.fig.canvas.blit(self.ax[0].bbox)
         self.fig.canvas.blit(self.ax[1].bbox)
         self.fig.canvas.blit(self.ax[2].bbox)
         self.fig.canvas.blit(self.ax[3].bbox)
         
         self.fig.canvas.flush_events()
-
-machine = Machine()
-
-try:
-    while True:
-        machine.processQueue()
-        machine.on_event('')
-        machine.updatePlot()
-        #print(machine.state)
-except KeyboardInterrupt:
-    machine.wb.__del__()
-    raise("Ctrl- C, Terminating")
 # Every state returns the next state
 # While loop runs outside state machine
 # Has resistance increased by 10% Pull bath test out, will cause resistance to increase and call transition.
