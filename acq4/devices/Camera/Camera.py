@@ -1055,6 +1055,11 @@ class FrameAcquisitionFuture(Future):
             raise ValueError("Must specify a timeout when still acquiring an unlimited number of frames.")
         self.wait(timeout)
         return self._frames
+    
+    def getStreamingResults(self) -> list[Frame]:
+        returningFrames = self._frames[:]
+        self._frames = []
+        return returningFrames
 
     def stopWhen(self, condition: Callable[[Frame], bool], blocking=True) -> None:
         """Stop acquiring frames when the given condition returns True.

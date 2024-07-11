@@ -345,12 +345,8 @@ def buildPlot(data_queue):
 
     
     plt.ion()
-    #self.plot_thread = threading.Thread(target=self.animatePlot, args=(fig, line1, line2, line3, voltageTraceLines, currentTraceLines))
     animation = FuncAnimation(fig, updatePlot, fargs=(data_queue, line1, line2, line3, voltageTraceLines, currentTraceLines), interval=1000/60, blit=True)
-    #self.plot_thread.start()
-    
     plt.show(block=False)
-    #plt.show() 
 
 def animatePlot(self, fig, line1, line2, line3, voltageTraceLines, currentTraceLines):
     animation = FuncAnimation(fig, self.updatePlot, fargs=(self.data_queue, line1, line2, line3, voltageTraceLines, currentTraceLines), interval=1000/60)

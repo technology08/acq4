@@ -299,7 +299,8 @@ class SimpleDevice(object):
         self.ax[2].set_xlim([-10, 101])
         self.ax[2].set_ylim([-10, 3000])
 
-        self.wb.camera.startCamera()
+        #self.wb.camera.startCamera()
+        self.wb.camera.start()
     
         self.future = self.wb.camera.acquireFrames(None)
         #self.frame = None
@@ -372,10 +373,16 @@ class SimpleDevice(object):
         
         camera_date = datetime.datetime.now()
         #if not self.cam_q.empty():
-        lastFrame = self.future.peekAtResult()
-        if len(lastFrame) > 0:
-            print("Frame!")
-            lastFrame = lastFrame[-1]
+        lastFrames = self.future.getStreamingResults()
+        print("Last Frames Len: ", len(lastFrames))
+        
+        if len(lastFrames) > 0:
+           
+            lastFrame = lastFrames[-1].data()
+            print("Frame Size: ", len(lastFrame))
+            # decimationFactor = 4;
+            # decimatedFrame = lastFrame(1:decimationFactor:end, 1:decimationFactor:end);
+            
             if not self.cameraConfigured:
                 self.cam_img = self.ax[3].imshow(lastFrame, interpolation='nearest')
                 self.ax[3].set_title(camera_date.isoformat(' '))
@@ -383,6 +390,7 @@ class SimpleDevice(object):
             else:
                 self.cam_img.set_data(lastFrame)
                 self.ax[3].set_title(camera_date.isoformat(' '))
+                pass
         else:
             print("No frames")
         plt.pause(0.001)
@@ -395,7 +403,7 @@ try:
         machine.on_event('')
         #machine.captureFrame()
         machine.updatePlot()
-        print(machine.state)
+        #print(machine.state)
 except KeyboardInterrupt:
     machine.wb.__del__()
     raise("Ctrl- C, Terminating")
