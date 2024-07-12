@@ -55,9 +55,8 @@ class Machine(object):
         frequency = 60
         period = 1 / frequency
 
-        self.wb.voltageClamp()
-        self.wb.clamp.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
-        self.wb.clamp.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
+        self.wb.voltageClamp(1)
+        self.wb.voltageClamp(2)
 
         print("Configured background recording!")
 
@@ -75,24 +74,37 @@ class Machine(object):
 
     def acquireVoltageClampData(self, data_queue, period, stop_recording):
         while not stop_recording.is_set():
-            _, voltage_data = self.wb.sendPulse(1, 1, period)
-
-            voltage_sent = voltage_data[0][1]
-            voltage_read = voltage_data[0][0]
+            #_, voltage_data = self.wb.sendPulse(1, 0, period)
+            voltage_data = self.wb.sendPulseBothChannels(1, 0, period)
+            #task = voltage_data['chans'][0]['task']
+            #ind = voltage_data['chans'][0]['index']
+            #print(voltage_data[task]['data'][0][ind])
+            # print "Data:", data[task]['data'][0][ind]
+            #print(voltage_data['Dev1'])
+            #self.__del__()
+            #raise Exception("STop")
+            
+            voltage_sent = voltage_data[1]
+            voltage_read = voltage_data[0]
+            voltage2_sent = voltage_data[3]
+            voltage2_read = voltage_data[2]
 
             voltage_sent = voltage_sent * self.wb.clamp.getState()['secondaryScaleFactor']
             current_read = voltage_read * self.wb.clamp.getState()['primaryScaleFactor']
+            voltage2_sent = voltage2_sent * self.wb.clamp2.getState()['secondaryScaleFactor']
+            current2_read = voltage2_read * self.wb.clamp2.getState()['primaryScaleFactor']
             
             resistances, transient_present = self.wb.calculateResistance(voltage_sent, current_read, 1)
+            resistances2, _ = self.wb.calculateResistance(voltage2_sent, current2_read, 1)
             megasurement = resistances[0] / 1e6
+            megasurement2 = resistances2[0] / 1e6
             date = datetime.datetime.now()
             if self.state is not None:
                 self.file.write(date.isoformat(' ') + ' ' + self.state.__str__() + ' ' + str(round(megasurement, 2)) + '\n')
-            data_queue.put((voltage_sent, current_read, megasurement, transient_present, date))
+            data_queue.put((voltage2_sent, current2_read, megasurement2, transient_present, date))
     
     def processQueue(self):
         if not self.data_queue.empty():
-            print(self.data_queue.qsize())
             while not self.data_queue.empty():
                 self.voltage, self.current, resistance, transientPresent, date = self.data_queue.get_nowait()
                 
@@ -107,8 +119,6 @@ class Machine(object):
                 self.resistanceHistory.append(resistance)
                 self.dates.append(date)
                 self.transientHistory.append(transientPresent)
-        else:
-            print(0)
 
     def configurePlot(self):
         x = np.zeros(1)
@@ -186,7 +196,9 @@ class Machine(object):
         self.ax[2].draw_artist(self.line3)
         self.ax[3].draw_artist(self.cam_img)
 
-        self.ax[1].relim()
+        #self.ax[1].relim()
+        #self.ax[2].relim()
+        #self.ax[2].autoscale_view()
         # update ax.viewLim using the new dataLim
         #self.ax[1].autoscale_view()
 

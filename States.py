@@ -289,3 +289,42 @@ class AbortState(State):
         self.wb.__del__()
 
         return None
+    
+class PressureTestState(State):
+    clean_start_time = None
+    period_start_time = None
+    cycles = 0
+    pressure1_set = False
+    pressure2_set = False
+
+    def on_event(self, event):
+                # Run clean step
+        current_time = time.perf_counter()
+
+        if self.clean_start_time is None:
+            self.clean_start_time = current_time
+            self.period_start_time = current_time
+            self.wb.pressureController.writeMessageSwitch(b"atm 2")
+            self.wb.pressureController.setPressure(500, 2)
+            self.wb.pressureController.writeMessageSwitch(b"pressure 2")
+        elif self.cycles > 20:
+            self.wb.pressureController.writeMessageSwitch(b'atm 2')
+            self.wb.pressureController.setPressure(0, 2)
+            return None
+        # Clean the pipette
+        
+        # Pos pressure for 2 sec , negative for 1 sec, at +500mbar -500mbar
+        if current_time - self.period_start_time >= 3:
+            if self.pressure2_set == False:
+                self.wb.pressureController.setPressure(500, 2)
+                self.period_start_time = current_time
+                self.cycles += 1
+                self.pressure2_set = True
+                self.pressure1_set = False
+        elif current_time - self.period_start_time >= 2:
+            if self.pressure1_set == False:
+                self.wb.pressureController.setPressure(-500, 2)
+                self.pressure1_set = True
+                self.pressure2_set = False
+
+        return self

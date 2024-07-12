@@ -123,6 +123,7 @@ class MultiClamp(PatchClamp):
                                # this ensures that self.lastState is filled.
             if defaults is not None and mode in defaults:
                 self.mc.setParams(defaults[mode])
+        self.setMode('VC')
         self.setMode('I=0')  ## safest mode to leave clamp in
 
         
@@ -310,8 +311,8 @@ class MultiClamp(PatchClamp):
             daqDev.setChannelValue(chan, holding*scale, block=False) 
 
     def autoPipetteOffset(self):
-        with self.dm.reserveDevices([self]):
-            self.mc.autoPipetteOffset()
+        #with self.dm.reserveDevices([self]):
+        self.mc.autoPipetteOffset()
         
     def autoBridgeBalance(self):
         with self.dm.reserveDevices([self]):

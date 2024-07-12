@@ -63,6 +63,26 @@ class Workbench:
             #vcHolding: -65e-3
             'vcHolding': 0.0,
             'icHolding': 0.0}, 'Clamp1', self.daq)
+        
+        # MULTICLAMP
+        self.clamp2 = MultiClamp(None, {'channelID': 'model:MC700B,sn:00836613,chan:2',
+            'commandChannel': {
+                'device': 'DAQ',
+                'channel': '/Dev1/ao1',
+                'type': 'ao'},
+            'primaryChannel': {
+                'device': 'DAQ',
+                'chsannel': '/Dev1/ai2',
+                'mode': 'NRSE',
+                'type': 'ai'},
+            'secondaryChannel': {
+                'device': 'DAQ',
+                'channel': '/Dev1/ai1',
+                'mode': 'NRSE',
+                'type': 'ai'},
+            #vcHolding: -65e-3
+            'vcHolding': 0.0,
+            'icHolding': 0.0}, 'Clamp2', self.daq)
 
         # HAMAMATSU ORCA CAMERA
         self.camera = MicroManagerCamera(None, {'mmAdapterName': 'HamamatsuHam',
@@ -208,9 +228,27 @@ class Workbench:
         return data
 
     # DAQ it
-    def voltageClamp(self):
-        print("Switching to VC on MC")
-        self.clamp.setMode('VC')
+    def voltageClamp(self, idx=1):
+        print("Switching to VC on MC", idx)
+        if idx == 2:
+            self.clamp2.setMode('VC')
+            self.clamp2.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
+            self.clamp2.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
+            self.clamp2.autoPipetteOffset()
+            self.clamp2.setMode('VC')
+            self.clamp2.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
+            self.clamp2.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
+            self.clamp.setMode('VC')
+            self.clamp.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
+            self.clamp.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
+        else:
+            self.clamp.setMode('VC')
+            self.clamp.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
+            self.clamp.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
+            self.clamp.autoPipetteOffset()
+            self.clamp.setMode('VC')
+            self.clamp.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
+            self.clamp.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
 
     def currentClamp(self):
         print("Switching to CC on MC")
@@ -336,6 +374,33 @@ class Workbench:
         task2.stop()
 
         return data1, data2
+    
+    def sendPulseBothChannels(self, peak, offset, period):
+        st = n.createSuperTask()
+
+        samples = int(period * self.CYCLES_PER_SECOND)
+
+        st.addChannel("/Dev1/ai10", "ai")
+        st.addChannel("/Dev1/ai9", "ai")
+        st.addChannel("/Dev1/ai2", "ai")
+        st.addChannel("/Dev1/ai1", "ai")
+        st.addChannel("/Dev1/ao0", "ao")
+        st.addChannel("/Dev1/ao1", "ao")
+
+        ao = np.zeros((2, samples))
+        ao[0, int(samples / 4 - 1):int(samples * 3 / 4 -1)] = peak
+        ao[1, int(samples / 4 - 1):int(samples * 3 / 4 -1)] = peak
+        ao += offset
+        st.setWaveform("/Dev1/ao0", ao[0])
+        st.setWaveform("/Dev1/ao1", ao[1])
+
+        st.configureClocks(rate=self.CYCLES_PER_SECOND, nPts=samples)
+        data = st.run()
+
+        for k in data:
+            if k[1] == 'ai':
+                return data[k]['data']
+        return None
     
     def calculateResistance(self, voltage_sent, current_read, periods_in_data):
         samples = len(current_read)
