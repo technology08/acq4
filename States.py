@@ -48,7 +48,7 @@ class EnterBathState(State):
         if (newResistance < 0.01 * self.ambientResistance) or newResistance < 100:
             self.wb.ps.stop()
             print("Enter bath!, Stopping pipette!")
-            return CaptureState(self.wb, self.machine)
+            return EnterBathStateManipulator2(self.wb, self.machine)
         
         if self.wb.ps.getPos()[2] < -5000:
             print("Abort")
@@ -58,7 +58,35 @@ class EnterBathState(State):
         
         if self.machine.resistanceHistory[-1] < 50: 
             print("one value!")
-            time.sleep(4)
+            time.sleep(1)
+        
+        return self
+    
+class EnterBathStateManipulator2(State):
+    ambientResistance = None 
+
+    def on_event(self, event):
+        if self.ambientResistance is None:
+            self.ambientResistance = arrayAverage(self.machine.resistance2History[-20:-1])
+            self.wb.moveManipulator2OnAxis(2, -12000, 1000, False)
+            return self 
+
+        newResistance = arrayAverage(self.machine.resistance2History[-6:-1])
+        print(newResistance)
+        if (newResistance < 0.01 * self.ambientResistance) or newResistance < 100:
+            self.wb.ps2.stop()
+            print("Enter bath!, Stopping pipette!")
+            return CaptureState(self.wb, self.machine)
+        
+        if self.wb.ps2.getPos()[2] < -5000:
+            print("Abort")
+            raise ValueError("Abort")
+        elif self.wb.ps2.getPos()[2] < 0:
+            self.wb.ps2.setSpeed(500)
+        
+        if self.machine.resistance2History[-1] < 50: 
+            print("one value!")
+            time.sleep(1)
         
         return self
 
@@ -73,28 +101,40 @@ class CaptureState(State):
             self.init_time = time.perf_counter()
 
         if not self.configured: 
-            #self.wb.pressureController.setPressure(15, 2)
-            #self.wb.pressureController.writeMessageSwitch("pressure 2")
+            self.wb.pressureController.writeMessageSwitch(b"atm 1")
+            self.wb.pressureController.setPressure(500, 1)
+            self.wb.pressureController.writeMessageSwitch(b"pressure 1")
             self.configured = True
 
             return self
         
-        if time.perf_counter() - self.init_time > 5:
-            return HuntState(self.wb, self.machine) # TODO: Remove once user interaction wanted
-        
-            cleared = input("Has capture pipette acquired a cell? (y/n) ")
-
-            if cleared == 'y':
+        if time.perf_counter() - self.init_time > 20:
+        #    return HuntState(self.wb, self.machine) # TODO: Remove once user interaction wanted
+        #
+            self.wb.pressureController.writeMessageSwitch(b"atm 1")
+            self.wb.pressureController.setPressure(0, 1)
+            return BlankState(self.wb, self.machine)
+            if arrayAverage(self.machine.resistance2History) < 50:
                 return HuntState(self.wb, self.machine)
-            elif cleared == 'n':
+            else:
                 return CleanState(self.wb, self.machine)
+        #    cleared = input("Has capture pipette acquired a cell? (y/n) ")
+#
+        #    if cleared == 'y':
+        #        return HuntState(self.wb, self.machine)
+        #    elif cleared == 'n':
+        #        return CleanState(self.wb, self.machine
             
-        elif time.perf_counter() - self.init_time > 3:
+        elif time.perf_counter() - self.init_time > 6:
             if not self.suction:
-                #self.wb.pressureController.setPressure(-15, 2)
+                self.wb.pressureController.setPressure(-15, 1)
                 self.suction = True
 
                 return self
+            else:
+                print("Resistance Average at Time ",  str(round(time.perf_counter() - self.init_time)), ":", arrayAverage(self.machine.resistance2History[-10:-1]))
+        else:
+            print("Resistance Average at Time ",  str(round(time.perf_counter() - self.init_time)), ":", arrayAverage(self.machine.resistance2History[-10:-1]))
           
         return self
     
@@ -327,4 +367,20 @@ class PressureTestState(State):
                 self.pressure1_set = True
                 self.pressure2_set = False
 
+        return self
+
+class LightsTestState(State):
+
+    def on_event(self, event):
+        self.wb.lightsOn()
+        time.sleep(2)
+        self.wb.lightsOff()
+        time.sleep(2)
+
+        return self
+    
+class BlankState(State):
+    def on_event(self, event):
+        print("Blank State")
+        
         return self

@@ -101,22 +101,25 @@ class Machine(object):
             date = datetime.datetime.now()
             if self.state is not None:
                 self.file.write(date.isoformat(' ') + ' ' + self.state.__str__() + ' ' + str(round(megasurement, 2)) + '\n')
-            data_queue.put((voltage2_sent, current2_read, megasurement2, transient_present, date))
+            data_queue.put((voltage_sent, current_read, megasurement, transient_present, date, megasurement2))
     
     def processQueue(self):
         if not self.data_queue.empty():
             while not self.data_queue.empty():
-                self.voltage, self.current, resistance, transientPresent, date = self.data_queue.get_nowait()
+                self.voltage, self.current, resistance, transientPresent, date, resistance2 = self.data_queue.get_nowait()
                 
                 
-                if len(self.resistanceHistory) >= 100:
-                    self.resistanceHistory = self.resistanceHistory[-99:-1]
+                if len(self.resistanceHistory) >= 1000:
+                    self.resistanceHistory = self.resistanceHistory[-999:-1]
+                if len(self.resistance2History) >= 1000:
+                    self.resistance2History = self.resistance2History[-999:-1]
                 if len(self.dates) >= 100:
                     self.dates = self.dates[-99:-1]
                 if len(self.transientHistory) >= 100:
-                    self.transientHistory = self.transientHistory[-99:-1]
+                    self.transientHistory = self.transientHistory[-999:-1]
 
                 self.resistanceHistory.append(resistance)
+                self.resistance2History.append(resistance2)
                 self.dates.append(date)
                 self.transientHistory.append(transientPresent)
 
@@ -125,6 +128,7 @@ class Machine(object):
         self.voltage = [0 for _ in range(350)]
         self.current = [0 for _ in range(350)]
         self.resistanceHistory = [0 for _ in range(1000)]
+        self.resistance2History = [0 for _ in range(1000)]
         self.transientHistory = [0 for _ in range(1000)]
         self.dates = [0 for _ in range(1000)]
 

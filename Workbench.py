@@ -402,6 +402,25 @@ class Workbench:
                 return data[k]['data']
         return None
     
+    def lightsOn(self):
+        task = n.createTask()
+
+        task.CreateDOChan("/Dev1/port0/line0", "", n.Val_ChanForAllLines)
+       
+        task.start()
+        task.write(np.ones(1, np.uint32))
+
+        task.stop()
+
+    def lightsOff(self):
+        task = n.createTask()
+
+        task.CreateDOChan("/Dev1/port0/line0", "", n.Val_ChanForAllLines)
+        task.start()
+        task.write(np.zeros(1, np.uint32))
+
+        task.stop()
+    
     def calculateResistance(self, voltage_sent, current_read, periods_in_data):
         samples = len(current_read)
         sample_per_iter = int(samples / periods_in_data)

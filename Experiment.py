@@ -1,8 +1,8 @@
 from Machine import Machine
-from States import State, EnterBathState, PressureTestState
+from States import *
 
 machine = Machine()
-machine.state = PressureTestState(machine.wb, machine)
+machine.state = CaptureState(machine.wb, machine)
 try:
     while True:
         machine.processQueue()
