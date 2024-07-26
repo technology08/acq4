@@ -22,23 +22,30 @@ class Machine(object):
     def __init__(self):
         """ Initialize the components. """
         self.wb = Workbench()
+        self.wb.pressureController.writeMessageSwitch(b'atm 1')
+        self.wb.pressureController.writeMessageSwitch(b'atm 2')
         self.file = open('resistance.txt', 'w')
         self.file.write('Experiment commencing at ' + datetime.datetime.now().isoformat() +'\n')
         self.file.close()
         self.file = open('resistance.txt', 'a')
         # Start with a default state.
         self.state = None
+        self.saveImage = False
+        self.imNumber = 0
         #self.state = EnterBathState(self.wb, self)#CaptureState(self.wb, self)
         self.data_queue = queue.Queue(100)
         self.streamVoltagePulses()
         self.configurePlot()
 
     def __del__(self):
+        self.wb.pressureController.writeMessageSwitch(b'atm 1')
+        self.wb.pressureController.writeMessageSwitch(b'atm 2')
         self.future.stop()
         self.wb.camera.stopCamera()
         self.file.close()
         self.stop_event.set()
         self.voltage_acquisition_thread.join()
+        exit()
         print("Terminating program.")
 
     def on_event(self, event):
@@ -187,6 +194,12 @@ class Machine(object):
             lastFrame = lastFrames[-1].data()
             decimationFactor = 4
             decimatedFrame = lastFrame[::decimationFactor,::decimationFactor]
+            self.image = decimatedFrame
+            if self.saveImage == True:
+                fname = '../acq4-storage/718Manipulator/' + str(self.imNumber) + '.png'
+                plt.imsave(fname, decimatedFrame, cmap='gray', vmin=0, vmax=255)
+                self.imNumber += 1
+                self.saveImage = False
             self.cam_img.set_data(decimatedFrame)
             #self.ax[3].set_title(camera_date.isoformat(' '))   
 
