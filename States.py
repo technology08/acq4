@@ -116,16 +116,6 @@ class CaptureState(State):
            # return BlankState(self.wb, self.machine)
 
             return SealState(self.wb, self.machine)
-            if arrayAverage(self.machine.resistance2History) < 50:
-                return HuntState(self.wb, self.machine)
-            else:
-                return CleanState(self.wb, self.machine)
-        #    cleared = input("Has capture pipette acquired a cell? (y/n) ")
-#
-        #    if cleared == 'y':
-        #        return HuntState(self.wb, self.machine)
-        #    elif cleared == 'n':
-        #        return CleanState(self.wb, self.machine
             
         elif time.perf_counter() - self.init_time > 2:
             if not self.suction:
@@ -518,55 +508,51 @@ class ManipulatorTestState(State):
     def on_event(self, event):
         if len(self.initialPos1) < 1:
             self.initialPos1 = self.wb.ps.getPos()
+            self.newPos11 = [self.initialPos1[0] + 2000, self.initialPos1[1], self.initialPos1[2] + 1000]
+            self.newPos12 = [self.initialPos1[0], self.initialPos1[1] + 2000, self.initialPos1[2]]
+            self.newPos13 = [self.initialPos1[0] - 50, self.initialPos1[1] + 2000, self.initialPos1[2] + 50]
         if len(self.initialPos2) < 1:
             self.initialPos2 = self.wb.ps2.getPos()
+            self.newPos21 = [self.initialPos2[0] + 2000, self.initialPos2[1], self.initialPos2[2] + 1000]
+            self.newPos22 = [self.initialPos2[0], self.initialPos2[1] + 2000, self.initialPos2[2]]
+            self.newPos23 = [self.initialPos2[0] - 50, self.initialPos2[1] + 2000, self.initialPos2[2] + 50]
 
         
         if not self.ps1Raised:
-            self.wb.moveManipulatorOnAxis(2, 500, 15000, False)
-            self.wb.moveManipulator2OnAxis(2, 500, 15000, False)
+            self.wb.ps.moveTo(self.newPos11, 1000)
+            self.wb.ps2.moveTo(self.newPos21, 1000)
+
             self.ps1Raised = True
         elif not self.ps1PulledBack: 
             if not self.wb.ps.isMoving() and not self.wb.ps2.isMoving():
-                self.wb.moveManipulatorOnAxis(0, 2000, 20000, False)
-                self.wb.moveManipulator2OnAxis(0, 2000, 20000, False)
+                self.wb.ps.moveTo(self.newPos12, 1000)
+                self.wb.ps2.moveTo(self.newPos22, 1000)
                 self.ps1PulledBack = True
         elif not self.cleaned: 
             if not self.wb.ps.isMoving() and not self.wb.ps2.isMoving():
-                # Run clean step
-                current_time = time.perf_counter()
-
-                if self.clean_start_time is None:
-                    self.clean_start_time = current_time
-                    self.period_start_time = current_time
-
-                    self.wb.moveManipulatorOnAxis(1, 3000, 20000, False)
-                    self.wb.moveManipulator2OnAxis(1, 300, 20000, False)
-                elif self.cycles > 10:
-                    self.wb.moveManipulatorOnAxis(1, -3000, 20000, False)
-                    self.wb.moveManipulator2OnAxis(1, -300, 20000, False)
+                self.wb.moveManipulatorOnAxis(1, -10, 1000, False)
+                self.wb.moveManipulator2OnAxis(1, -10, 1000, False)
+                
+                if self.cycles > 10:
                     self.cleaned = True
                     return self
                 self.cycles += 1
         elif not self.ps1Hovering:
             if not self.wb.ps.isMoving() and not self.wb.ps2.isMoving():
-                self.wb.moveManipulatorOnAxis(0, -2000, 20000, False)
-                self.wb.moveManipulator2OnAxis(0, -2000, 20000, False)
+                self.wb.ps.moveTo(self.newPos13, 1000)
+                self.wb.ps2.moveTo(self.newPos23, 1000)
                 self.ps1Hovering = True
         elif not self.ps1Lowering:
             if not self.wb.ps.isMoving() and not self.wb.ps2.isMoving():
-                self.wb.moveManipulatorOnAxis(2, -500, 10000, False)
-                self.wb.moveManipulator2OnAxis(2, -500, 10000, False)
                 self.ps1Lowering = True
         elif not self.ps1Returning:
             if not self.wb.ps.isMoving() and not self.wb.ps2.isMoving():
-                print(self.initialPos1)
                 self.wb.ps.moveTo(self.initialPos1)
                 self.wb.ps2.moveTo(self.initialPos2)
                 self.ps1Returning = True
         elif self.ps1Returning and (not self.wb.ps.isMoving() and not self.wb.ps2.isMoving()):
             # Returned, move back to CaptureState
-            if self.runs >= 2:
+            if self.runs >= 1000:
                 self.machine.__del__()
                 
                 return None
