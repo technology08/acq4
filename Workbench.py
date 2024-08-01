@@ -24,20 +24,20 @@ class Workbench:
         baudrate = int(sys.argv[2]) if len(sys.argv) > 2 else None
         devname = "COM4"
         if devname.lower().startswith('com') or devname.startswith('/dev/'):
-            self.ps = Scientifica(port=devname, baudrate=baudrate, ctrl_version=None)
+            self.patchManipulator = Scientifica(port=devname, baudrate=baudrate, ctrl_version=None)
         else:
-            self.ps = Scientifica(name=devname, baudrate=baudrate, ctrl_version=None)
+            self.patchManipulator = Scientifica(name=devname, baudrate=baudrate, ctrl_version=None)
 
-        print("Created PatchStar 1 at port ", self.ps.getPort())
+        print("Created PatchStar 1 at port ", self.patchManipulator.getPort())
 
         # MANIPULATOR 2
         devname = "COM3"
         if devname.lower().startswith('com') or devname.startswith('/dev/'):
-            self.ps2 = Scientifica(port=devname, baudrate=baudrate, ctrl_version=None)
+            self.captureManipulator = Scientifica(port=devname, baudrate=baudrate, ctrl_version=None)
         else:
-            self.ps2 = Scientifica(name=devname, baudrate=baudrate, ctrl_version=None)
+            self.captureManipulator = Scientifica(name=devname, baudrate=baudrate, ctrl_version=None)
         
-        print("Created PatchStar 2 at port ", self.ps2.getPort())
+        print("Created PatchStar 2 at port ", self.captureManipulator.getPort())
 
         # NATIONAL INSTRUMENTS DAQ
         self.daq = NiDAQ(None, 
@@ -45,7 +45,7 @@ class Workbench:
                     "DAQ")
 
         # MULTICLAMP
-        self.clamp = MultiClamp(None, {'channelID': 'model:MC700B,sn:00836613,chan:1',
+        self.patchAmplifier = MultiClamp(None, {'channelID': 'model:MC700B,sn:00836613,chan:1',
             'commandChannel': {
                 'device': 'DAQ',
                 'channel': '/Dev1/ao0',
@@ -65,7 +65,7 @@ class Workbench:
             'icHolding': 0.0}, 'Clamp1', self.daq)
         
         # MULTICLAMP
-        self.clamp2 = MultiClamp(None, {'channelID': 'model:MC700B,sn:00836613,chan:2',
+        self.captureAmplifier = MultiClamp(None, {'channelID': 'model:MC700B,sn:00836613,chan:2',
             'commandChannel': {
                 'device': 'DAQ',
                 'channel': '/Dev1/ao1',
@@ -111,11 +111,11 @@ class Workbench:
 
     # All devices Configured
     def __del__(self):
-        self.clamp.release()
+        self.patchAmplifier.release()
         self.daq.release()
         self.camera.release()
         self.stage.release()
-        self.ps.release()
+        self.patchManipulator.release()
 
     # Camera Functions 
     def displayFrames(frames, title=""):
@@ -145,46 +145,46 @@ class Workbench:
         print("  DO: ", n.listDOLines(dev))
 
     def printClampstateOptions(self):
-        print("Clamp State Options: ", self.clamp.getState())
+        print("Clamp State Options: ", self.patchAmplifier.getState())
 
     def printManipulatorSettings(self):
-        print("Device type:  %s  Description:  %s" % (self.ps.getType(), self.ps.getDescription()))
-        print("Firmware version: %r" % self.ps.getFirmwareVersion())
-        print("Position: %r" % self.ps.getPos())
-        print("Max speed: %r um/sec" % self.ps.getSpeed())
-        if self.ps._version < 3:
-            print("Min speed: %r um/sec" % (self.ps.getParam('minSpeed') / (2. * self.ps.getAxisScale(0))))
-            print("Acceleration: %r um^2/sec" % (self.ps.getParam('accel') * 250. / self.ps.getAxisScale(0)))
+        print("Device type:  %s  Description:  %s" % (self.patchManipulator.getType(), self.patchManipulator.getDescription()))
+        print("Firmware version: %r" % self.patchManipulator.getFirmwareVersion())
+        print("Position: %r" % self.patchManipulator.getPos())
+        print("Max speed: %r um/sec" % self.patchManipulator.getSpeed())
+        if self.patchManipulator._version < 3:
+            print("Min speed: %r um/sec" % (self.patchManipulator.getParam('minSpeed') / (2. * self.patchManipulator.getAxisScale(0))))
+            print("Acceleration: %r um^2/sec" % (self.patchManipulator.getParam('accel') * 250. / self.patchManipulator.getAxisScale(0)))
         else:
-            print("Min speed: %r um/sec" % self.ps.getParam('minSpeed'))
-            print("Acceleration: %r um^2/sec" % self.ps.getParam('accel'))
+            print("Min speed: %r um/sec" % self.patchManipulator.getParam('minSpeed'))
+            print("Acceleration: %r um^2/sec" % self.patchManipulator.getParam('accel'))
 
     # Move Manipulator
     def moveManipulatorOnAxis(self, axis, val, speed, displayResults=False):
-        pos1 = self.ps.getPos()
+        pos1 = self.patchManipulator.getPos()
         pos2 = [None, None, None]
         pos2[axis] = pos1[axis] + val
         print("Move %s => %s" % (pos1, pos2))
-        self.ps.moveTo(pos2, speed=speed)
+        self.patchManipulator.moveTo(pos2, speed=speed)
         #i = 0
         if displayResults:
-            while self.ps.isMoving():
-                pos = self.ps.getPos()
+            while self.patchManipulator.isMoving():
+                pos = self.patchManipulator.getPos()
                 print("time: %s position: %s" % (time.time(), pos))
                 time.sleep(0.01)
             #i += 1
 
     # Move Manipulator
     def moveManipulator2OnAxis(self, axis, val, speed, displayResults=False):
-        pos1 = self.ps2.getPos()
+        pos1 = self.captureManipulator.getPos()
         pos2 = [None, None, None]
         pos2[axis] = pos1[axis] + val
         print("Move %s => %s" % (pos1, pos2))
-        self.ps2.moveTo(pos2, speed=speed)
+        self.captureManipulator.moveTo(pos2, speed=speed)
         #i = 0
         if displayResults:
-            while self.ps2.isMoving():
-                pos = self.ps2.getPos()
+            while self.captureManipulator.isMoving():
+                pos = self.captureManipulator.getPos()
                 print("time: %s position: %s" % (time.time(), pos))
                 time.sleep(0.01)
             #i += 1
@@ -231,28 +231,24 @@ class Workbench:
     def voltageClamp(self, idx=1):
         print("Switching to VC on MC", idx)
         if idx == 2:
-            self.clamp2.setMode('VC')
-            self.clamp2.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
-            self.clamp2.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
-            self.clamp2.autoPipetteOffset()
-            self.clamp2.setMode('VC')
-            self.clamp2.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
-            self.clamp2.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
-            self.clamp.setMode('VC')
-            self.clamp.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
-            self.clamp.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
+            self.captureAmplifier.setMode('VC')
+            self.captureAmplifier.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
+            self.captureAmplifier.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
         else:
-            self.clamp.setMode('VC')
-            self.clamp.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
-            self.clamp.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
-            self.clamp.autoPipetteOffset()
-            self.clamp.setMode('VC')
-            self.clamp.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
-            self.clamp.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
+            self.patchAmplifier.setMode('VC')
+            self.patchAmplifier.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
+            self.patchAmplifier.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
 
-    def currentClamp(self):
-        print("Switching to CC on MC")
-        self.clamp.setMode('CC')
+    def currentClamp(self, idx):
+        print("Switching to I=0 on MC", idx)
+        if idx == 2:
+            self.captureAmplifier.setMode('I=0')
+            self.captureAmplifier.setParam('PrimarySignal', 'SIGNAL_IC_MEMBPOTENTIAL')
+            self.captureAmplifier.setParam('SecondarySignal', 'SIGNAL_IC_MEMBCURRENT')
+        else:
+            self.patchAmplifier.setMode('I=0')
+            self.patchAmplifier.setParam('PrimarySignal', 'SIGNAL_IC_MEMBPOTENTIAL')
+            self.patchAmplifier.setParam('SecondarySignal', 'SIGNAL_IC_MEMBCURRENT')
 
     def setDAQOutput(self, val, hold=0.0):
         print("Changing ao0 to ", val, "V")
@@ -402,6 +398,24 @@ class Workbench:
                 return data[k]['data']
         return None
     
+    def readPulseBothChannels(self, period):
+        st = n.createSuperTask()
+
+        samples = int(period * self.CYCLES_PER_SECOND)
+
+        st.addChannel("/Dev1/ai10", "ai")
+        st.addChannel("/Dev1/ai9", "ai")
+        st.addChannel("/Dev1/ai2", "ai")
+        st.addChannel("/Dev1/ai1", "ai")
+
+        st.configureClocks(rate=self.CYCLES_PER_SECOND, nPts=samples)
+        data = st.run()
+
+        for k in data:
+            if k[1] == 'ai':
+                return data[k]['data']
+        return None
+    
     def lightsOn(self):
         task = n.createTask()
 
@@ -443,13 +457,13 @@ class Workbench:
     
     def configureVoltageClamp(self):
         self.voltageClamp()
-        self.clamp.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
-        self.clamp.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
+        self.patchAmplifier.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
+        self.patchAmplifier.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
 
     def configureCurrentClamp(self):
         self.currentClamp()
-        self.clamp.setParam('PrimarySignal', 'SIGNAL_IC_MEMBCURRENT')
-        self.clamp.setParam('SecondarySignal', 'SIGNAL_IC_MEMBPOTENTIAL')
+        self.patchAmplifier.setParam('PrimarySignal', 'SIGNAL_IC_MEMBCURRENT')
+        self.patchAmplifier.setParam('SecondarySignal', 'SIGNAL_IC_MEMBPOTENTIAL')
 
     def measureResistance(self, frequency):
         """Returns resistance measurements for each pulse. Sends single pulse at given `frequency` before measuring."""
@@ -460,8 +474,8 @@ class Workbench:
         voltage_sent = voltage_data[0][1]
         voltage_read = voltage_data[0][0]
 
-        voltage_sent = voltage_sent * self.clamp.getState()['secondaryScaleFactor']
-        current_read = voltage_read * self.clamp.getState()['primaryScaleFactor']
+        voltage_sent = voltage_sent * self.patchAmplifier.getState()['secondaryScaleFactor']
+        current_read = voltage_read * self.patchAmplifier.getState()['primaryScaleFactor']
 
         resistances = self.calculateResistance(voltage_sent, current_read, 1)
     
@@ -476,8 +490,8 @@ class Workbench:
         voltage_sent = voltage_data[0][1]
         voltage_read = voltage_data[0][0]
 
-        voltage_sent = voltage_sent * self.clamp.getState()['secondaryScaleFactor']
-        current_read = voltage_read * self.clamp.getState()['primaryScaleFactor']
+        voltage_sent = voltage_sent * self.patchAmplifier.getState()['secondaryScaleFactor']
+        current_read = voltage_read * self.patchAmplifier.getState()['primaryScaleFactor']
 
         #transient_present = self.currentTransient(current_read, 1)
         periods_in_data = 1

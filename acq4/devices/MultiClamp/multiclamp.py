@@ -319,9 +319,9 @@ class MultiClamp(PatchClamp):
             self.mc.autoBridgeBal()
 
     def autoCapComp(self):
-        with self.dm.reserveDevices([self]):
-            self.mc.autoFastComp()
-            self.mc.autoSlowComp()
+        #with self.dm.reserveDevices([self]):
+        self.mc.autoFastComp()
+        self.mc.autoSlowComp()
 
     def listSignals(self, mode):
         return self.mc.listSignals(mode)

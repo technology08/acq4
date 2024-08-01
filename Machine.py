@@ -2,14 +2,14 @@ from Workbench import Workbench, arrayAverage
 #from States import EnterBathState, CaptureState, SealState, HuntState, BreakInState, WholeCellState, CleanState
 
 import time
-import datetime
+from datetime import datetime
 import threading
 import queue
 import numpy as np
+import os
 
 from matplotlib.animation import FuncAnimation
 from matplotlib import pyplot as plt
-from cv2 import equalizeHist
 
 import nest_asyncio
 nest_asyncio.apply()
@@ -26,8 +26,17 @@ class Machine(object):
         self.wb.pressureController.writeMessageSwitch(b'atm 1')
         self.wb.pressureController.setPressure(200, 2)
         self.wb.pressureController.writeMessageSwitch(b'pressure 2')
-        self.file = open('resistance.txt', 'w')
-        self.file.write('Experiment commencing at ' + datetime.datetime.now().isoformat() +'\n')
+        
+        self.experimentDir = '../acq4-storage/Experiments/' + datetime.today().strftime('%Y%m%d%H%M%S') + "/"
+        if not os.path.exists(self.experimentDir):
+            os.makedirs(self.experimentDir)
+
+        self.wholeCellDir = self.experimentDir + 'Misc/'
+        if not os.path.exists(self.wholeCellDir):
+            os.makedirs(self.wholeCellDir)
+
+        self.file = open(self.experimentDir + 'Misc/resistance.txt', 'w')
+        self.file.write('Experiment commencing at ' + datetime.now().isoformat() +'\n')
         self.file.close()
         self.file = open('resistance.txt', 'a')
         # Start with a default state.
@@ -46,7 +55,7 @@ class Machine(object):
         self.wb.camera.stopCamera()
         self.file.close()
         self.stop_event.set()
-        self.voltage_acquisition_thread.join()
+        self.data_acquisition_thread.join()
         exit()
         print("Terminating program.")
 
@@ -71,9 +80,52 @@ class Machine(object):
 
         self.stop_event = threading.Event()
 
-        self.voltage_acquisition_thread = threading.Thread(target=self.acquireVoltageClampData, args=(self.data_queue, period, self.stop_event))
-        self.voltage_acquisition_thread.start()
+        self.data_acquisition_thread = threading.Thread(target=self.acquireVoltageClampData, args=(self.data_queue, period, self.stop_event, True))
+        self.data_acquisition_thread.start()
 
+    def readVoltagePulses(self):
+        frequency = 60
+        period = 1 / frequency
+
+        self.stop_event = threading.Event()
+
+        self.data_acquisition_thread = threading.Thread(target=self.acquireVoltageClampData, args=(self.data_queue, period, self.stop_event, False))
+        self.current_acquisition_thread.start()
+
+    def readCurrentPulses(self):
+        frequency = 60
+        period = 1 / frequency
+
+        self.wb.currentClamp(1)
+        self.wb.currentClamp(2)
+
+        self.stop_event = threading.Event()
+
+        self.data_acquisition_thread = threading.Thread(target=self.acquireCurrentClampData, args=(self.data_queue, period, self.stop_event))
+        self.current_acquisition_thread.start()
+
+    def acquireCurrentClampData(self, data_queue, period, stop_recording):
+        while not stop_recording.is_set():
+            voltage_data = self.wb.readPulseBothChannels( period)
+            
+            patch_secondary = voltage_data[1]
+            patch_primary = voltage_data[0]
+            capture_secondary = voltage_data[3]
+            capture_primary = voltage_data[2]
+
+            current_patch = patch_secondary * self.wb.patchAmplifier.getState()['secondaryScaleFactor']
+            voltage_patch = patch_primary * self.wb.patchAmplifier.getState()['primaryScaleFactor']
+            current_capture = capture_secondary * self.wb.captureAmplifier.getState()['secondaryScaleFactor']
+            voltage_capture = capture_primary * self.wb.captureAmplifier.getState()['primaryScaleFactor']
+            
+            resistancesPatch, transientPresentPatch = self.wb.calculateResistance(voltage_patch, current_patch, 1)
+            resistancesCapture, transientPresentCapture = self.wb.calculateResistance(voltage_capture, current_capture, 1)
+            resistancePatchMegaohm = resistancesPatch[0] / 1e6
+            resistanceCaptureMegaohm = resistancesCapture[0] / 1e6
+            date = datetime.datetime.now()
+            if self.state is not None:
+                self.file.write(date.isoformat(' ') + ' ' + self.state.__str__() + ' ' + str(round(resistancePatchMegaohm, 2)) + '\n')
+            data_queue.put((voltage_patch, current_patch, resistancePatchMegaohm, transientPresentPatch, date, resistanceCaptureMegaohm))
     
     # DATAQUEUE:
     # voltage_sent: Voltage reading of last pulse
@@ -81,71 +133,68 @@ class Machine(object):
     # resistance: Resistance measure in megaohms
     # date: Timestamp
 
-    def acquireVoltageClampData(self, data_queue, period, stop_recording):
-        while not stop_recording.is_set():
-            #_, voltage_data = self.wb.sendPulse(1, 0, period)
-            voltage_data = self.wb.sendPulseBothChannels(1, 0, period)
-            #task = voltage_data['chans'][0]['task']
-            #ind = voltage_data['chans'][0]['index']
-            #print(voltage_data[task]['data'][0][ind])
-            # print "Data:", data[task]['data'][0][ind]
-            #print(voltage_data['Dev1'])
-            #self.__del__()
-            #raise Exception("STop")
-            
-            voltage_sent = voltage_data[1]
-            voltage_read = voltage_data[0]
-            voltage2_sent = voltage_data[3]
-            voltage2_read = voltage_data[2]
+    def stopAcquiringData(self):
+        self.stop_event.set()
+        self.data_acquisition_thread.join()
 
-            voltage_sent = voltage_sent * self.wb.clamp.getState()['secondaryScaleFactor']
-            current_read = voltage_read * self.wb.clamp.getState()['primaryScaleFactor']
-            voltage2_sent = voltage2_sent * self.wb.clamp2.getState()['secondaryScaleFactor']
-            current2_read = voltage2_read * self.wb.clamp2.getState()['primaryScaleFactor']
+    def acquireVoltageClampData(self, data_queue, period, stop_recording, sendPulse=True):
+        while not stop_recording.is_set():
+            if sendPulse:
+                voltage_data = self.wb.sendPulseBothChannels(1, 0, period)
+            else:
+                voltage_data = self.wb.readPulseBothChannels(period)
             
-            resistances, transient_present = self.wb.calculateResistance(voltage_sent, current_read, 1)
-            resistances2, _ = self.wb.calculateResistance(voltage2_sent, current2_read, 1)
-            megasurement = resistances[0] / 1e6
-            megasurement2 = resistances2[0] / 1e6
-            date = datetime.datetime.now()
+            patch_secondary = voltage_data[1]
+            patch_primary = voltage_data[0]
+            capture_secondary = voltage_data[3]
+            capture_primary = voltage_data[2]
+
+            voltage_patch = patch_secondary * self.wb.patchAmplifier.getState()['secondaryScaleFactor']
+            current_patch = patch_primary * self.wb.patchAmplifier.getState()['primaryScaleFactor']
+            voltage_capture = capture_secondary * self.wb.captureAmplifier.getState()['secondaryScaleFactor']
+            current_capture = capture_primary * self.wb.captureAmplifier.getState()['primaryScaleFactor']
+            
+            resistancesPatch, transientPresentPatch = self.wb.calculateResistance(voltage_patch, current_patch, 1)
+            resistancesCapture, transientPresentCapture = self.wb.calculateResistance(voltage_capture, current_capture, 1)
+            resistancePatchMegaohm = resistancesPatch[0] / 1e6
+            resistanceCaptureMegaohm = resistancesCapture[0] / 1e6
+            date = datetime.now()
             if self.state is not None:
-                self.file.write(date.isoformat(' ') + ' ' + self.state.__str__() + ' ' + str(round(megasurement, 2)) + '\n')
-            data_queue.put((voltage_sent, current_read, megasurement, transient_present, date, megasurement2))
+                self.file.write(date.isoformat(' ') + ' ' + self.state.__str__() + ' ' + str(round(resistancePatchMegaohm, 2)) + '\n')
+            data_queue.put((voltage_patch, current_patch, resistancePatchMegaohm, transientPresentPatch, date, resistanceCaptureMegaohm))
     
     def processQueue(self):
         if not self.data_queue.empty():
             while not self.data_queue.empty():
-                self.voltage, self.current, resistance, transientPresent, date, resistance2 = self.data_queue.get_nowait()
+                self.voltage_patch, self.current_patch, resistance_patch, transientPresent_patch, date, resistance_capture = self.data_queue.get_nowait()
                 
-                
-                if len(self.resistanceHistory) >= 1000:
-                    self.resistanceHistory = self.resistanceHistory[-999:-1]
-                if len(self.resistance2History) >= 1000:
-                    self.resistance2History = self.resistance2History[-999:-1]
+                if len(self.resistancePatchHistory) >= 1000:
+                    self.resistancePatchHistory = self.resistancePatchHistory[-999:-1]
+                if len(self.resistanceCaptureHistory) >= 1000:
+                    self.resistanceCaptureHistory = self.resistanceCaptureHistory[-999:-1]
                 if len(self.dates) >= 100:
                     self.dates = self.dates[-99:-1]
-                if len(self.transientHistory) >= 100:
-                    self.transientHistory = self.transientHistory[-999:-1]
+                if len(self.transientPatchHistory) >= 100:
+                    self.transientPatchHistory = self.transientPatchHistory[-999:-1]
 
-                self.resistanceHistory.append(resistance)
-                self.resistance2History.append(resistance2)
+                self.resistancePatchHistory.append(resistance_patch)
+                self.resistanceCaptureHistory.append(resistance_capture)
                 self.dates.append(date)
-                self.transientHistory.append(transientPresent)
+                self.transientPatchHistory.append(transientPresent_patch)
 
     def configurePlot(self):
         x = np.zeros(1)
-        self.voltage = [0 for _ in range(350)]
-        self.current = [0 for _ in range(350)]
-        self.resistanceHistory = [0 for _ in range(1000)]
-        self.resistance2History = [0 for _ in range(1000)]
-        self.transientHistory = [0 for _ in range(1000)]
+        self.voltage_patch = [0 for _ in range(350)]
+        self.current_patch = [0 for _ in range(350)]
+        self.resistancePatchHistory = [0 for _ in range(1000)]
+        self.resistanceCaptureHistory = [0 for _ in range(1000)]
+        self.transientPatchHistory = [0 for _ in range(1000)]
         self.dates = [0 for _ in range(1000)]
 
         self.fig, self.ax = plt.subplot_mosaic([[0, 3, 4],
                                            [1, 3, 4],
                                            [2, 3, 4]],
                                             figsize=(15, 5), layout='constrained')
-        #fig.canvas.mpl_connect('close_event', self.__del__())
 
         self.line1, = self.ax[0].plot(x, np.zeros(1))
         self.line2, = self.ax[1].plot(x, np.zeros(1))
@@ -160,8 +209,6 @@ class Machine(object):
 
         self.cam_img = self.ax[3].imshow(np.full((512,512), np.nan), cmap='gray', vmin=0, vmax=2**16 -1)
         
-        blank_frame = np.zeros((512,512))
-        #self.cam_histogram = self.ax[4].hist(blank_frame.flatten(),2**11,[0,2**16], color = 'r')
         self.cam_histogram, = self.ax[4].plot(np.zeros(2048), np.zeros(2048))
 
         self.ax[4].set_xlim([0, 2048])
@@ -186,17 +233,15 @@ class Machine(object):
     def updatePlot(self):
         self.processQueue()
 
-        self.line1.set_xdata(np.arange(len(self.voltage)))
-        self.line1.set_ydata(self.voltage)
-        self.line2.set_xdata(np.arange(len(self.current)))
-        self.line2.set_ydata(self.current)
+        self.line1.set_xdata(np.arange(len(self.voltage_patch)))
+        self.line1.set_ydata(self.voltage_patch)
+        self.line2.set_xdata(np.arange(len(self.current_patch)))
+        self.line2.set_ydata(self.current_patch)
 
-        self.line3.set_xdata(np.arange(len(self.resistanceHistory)))
-        self.line3.set_ydata(self.resistanceHistory)
+        self.line3.set_xdata(np.arange(len(self.resistancePatchHistory)))
+        self.line3.set_ydata(self.resistancePatchHistory)
 
-        #self.ax[0].set_title(self.dates[-1].isoformat(' '))
-
-        if self.transientHistory[-1]:
+        if self.transientPatchHistory[-1]:
             self.line3.set_color('green')
         else:
             self.line3.set_color('red')
@@ -212,20 +257,15 @@ class Machine(object):
 
             hist,bins = np.histogram(decimatedFrame.flatten(),2**11,[0,2**16])
             norm_hist = hist / max(hist)
-            cdf = hist.cumsum()
-            cdf_normalized = cdf * hist.max() / cdf.max()
 
-            #self.cam_histogram.plot(cdf_normalized, color = 'b')
-
-            if self.saveImage == True:
-                fname = '../acq4-storage/730CatchAndRelease/' + str(self.imNumber) + '.png'
+            if self.saveImage:
+                fname = self.wholeCellDir + str(self.imNumber) + '.png'
                 plt.imsave(fname, decimatedFrame, cmap='gray', vmin=0, vmax=2**16 - 1)
                 self.imNumber += 1
                 self.saveImage = False
+
             self.cam_img.set_data(decimatedFrame)
             self.cam_histogram.set_data(np.arange(0, 2**11), norm_hist)
-            #self.cam_img.set_data(equalizeHist(decimatedFrame.astype(np.uint8)))
-            #self.ax[3].set_title(camera_date.isoformat(' '))   
 
         self.fig.canvas.restore_region(self.ax0background )
         self.fig.canvas.restore_region(self.ax1background )
@@ -239,12 +279,6 @@ class Machine(object):
         self.ax[3].draw_artist(self.cam_img)
         self.ax[4].draw_artist(self.cam_histogram)
 
-        #self.ax[1].relim()
-        #self.ax[2].relim()
-        #self.ax[2].autoscale_view()
-        # update ax.viewLim using the new dataLim
-        #self.ax[1].autoscale_view()
-
         self.fig.canvas.blit(self.ax[0].bbox)
         self.fig.canvas.blit(self.ax[1].bbox)
         self.fig.canvas.blit(self.ax[2].bbox)
@@ -252,6 +286,3 @@ class Machine(object):
         self.fig.canvas.blit(self.ax[4].bbox)
         
         self.fig.canvas.flush_events()
-# Every state returns the next state
-# While loop runs outside state machine
-# Has resistance increased by 10% Pull bath test out, will cause resistance to increase and call transition.

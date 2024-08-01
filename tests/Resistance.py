@@ -53,7 +53,7 @@ def squareWaveCurrentPlot():
 
     voltage_sent = voltage_data[0][1]
     voltage_read = voltage_data[0][0]
-    voltage_sent = voltage_sent * workbench.clamp.getState()['secondaryScaleFactor']
+    voltage_sent = voltage_sent * workbench.patchAmplifier.getState()['secondaryScaleFactor']
     plt.subplot(3,1,1)
     plt.plot(np.arange(0, len(voltage_sent),1), voltage_sent)
     plt.title("Secondary Signal")
@@ -61,11 +61,11 @@ def squareWaveCurrentPlot():
     
     plt.subplot(3,1,2)
 
-    current_read = voltage_read * workbench.clamp.getState()['primaryScaleFactor']
+    current_read = voltage_read * workbench.patchAmplifier.getState()['primaryScaleFactor']
     
     plt.plot(np.arange(0,len(current_read),1), current_read)
     plt.title("Primary Signal")
-    plt.ylabel(workbench.clamp.getState()['primarySignal'] + " (" + workbench.clamp.getState()['primaryUnits'] + ")")
+    plt.ylabel(workbench.patchAmplifier.getState()['primarySignal'] + " (" + workbench.patchAmplifier.getState()['primaryUnits'] + ")")
     
     plt.subplots_adjust(left=0.1,
                     bottom=0.1, 
@@ -101,8 +101,8 @@ def streamSmartSquareWave():
         voltage_sent = voltage_data[0][1]
         voltage_read = voltage_data[0][0]
 
-        voltage_sent = voltage_sent * workbench.clamp.getState()['secondaryScaleFactor']
-        current_read = voltage_read * workbench.clamp.getState()['primaryScaleFactor']
+        voltage_sent = voltage_sent * workbench.patchAmplifier.getState()['secondaryScaleFactor']
+        current_read = voltage_read * workbench.patchAmplifier.getState()['primaryScaleFactor']
 
         print(voltage_sent, current_read)
 
@@ -115,8 +115,8 @@ def streamPulses():
     periods_in_duration = duration / period
 
     workbench.voltageClamp()
-    workbench.clamp.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
-    workbench.clamp.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
+    workbench.patchAmplifier.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
+    workbench.patchAmplifier.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
 
     #time.sleep(2)
     
@@ -142,8 +142,8 @@ def streamPulses():
         voltage_sent = voltage_data[0][1]
         voltage_read = voltage_data[0][0]
 
-        voltage_sent = voltage_sent * workbench.clamp.getState()['secondaryScaleFactor']
-        current_read = voltage_read * workbench.clamp.getState()['primaryScaleFactor']
+        voltage_sent = voltage_sent * workbench.patchAmplifier.getState()['secondaryScaleFactor']
+        current_read = voltage_read * workbench.patchAmplifier.getState()['primaryScaleFactor']
 
         #print(voltage_sent, current_read)
 

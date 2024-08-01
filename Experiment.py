@@ -1,5 +1,5 @@
 from Machine import Machine
-from TestStates import *
+from States import *
 from time import sleep
 
 runs = 0
@@ -7,7 +7,7 @@ registerNewRun = False
 
 machine = Machine()
 sleep(2)
-machine.state = CaptureTestState(machine.wb, machine)
+machine.state = CaptureState(machine.wb, machine)
 try:
     while runs < 100:
         machine.processQueue()

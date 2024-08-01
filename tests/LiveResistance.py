@@ -20,8 +20,8 @@ def streamSmartSquareWave():
         voltage_sent = voltage_data[0][1]
         voltage_read = voltage_data[0][0]
 
-        voltage_sent = voltage_sent * workbench.clamp.getState()['secondaryScaleFactor']
-        current_read = voltage_read * workbench.clamp.getState()['primaryScaleFactor']
+        voltage_sent = voltage_sent * workbench.patchAmplifier.getState()['secondaryScaleFactor']
+        current_read = voltage_read * workbench.patchAmplifier.getState()['primaryScaleFactor']
 
         print(voltage_sent, current_read)
 
@@ -50,8 +50,8 @@ def streamPulses2():
     periods_in_duration = duration / period
 
     workbench.voltageClamp()
-    workbench.clamp.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
-    workbench.clamp.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
+    workbench.patchAmplifier.setParam('PrimarySignal', 'SIGNAL_VC_MEMBCURRENT')
+    workbench.patchAmplifier.setParam('SecondarySignal', 'SIGNAL_VC_MEMBPOTENTIAL')
 
     #time.sleep(2)
     
@@ -106,8 +106,8 @@ def acquireData2(data_queue, periods_in_duration, period, stop_recording):
         voltage_sent = voltage_data[0][1]
         voltage_read = voltage_data[0][0]
 
-        voltage_sent = voltage_sent * workbench.clamp.getState()['secondaryScaleFactor']
-        current_read = voltage_read * workbench.clamp.getState()['primaryScaleFactor']
+        voltage_sent = voltage_sent * workbench.patchAmplifier.getState()['secondaryScaleFactor']
+        current_read = voltage_read * workbench.patchAmplifier.getState()['primaryScaleFactor']
 
         #print(voltage_sent, current_read)
 

@@ -1,10 +1,11 @@
 from Machine import Machine
-from States import State, EnterBathState
+from OldStates import State, EnterBathState
 
 machine = Machine()
 try:
     while True:
         machine.processQueue()
+        print(machine.wb.patchAmplifier.getState())
         machine.updatePlot()
 except KeyboardInterrupt:
     machine.wb.__del__()

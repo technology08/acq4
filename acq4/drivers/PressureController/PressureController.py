@@ -16,6 +16,9 @@ class PressureController:
     bytesize = 8
     timeout = 0.1
     serverID = 247
+
+    CAPTURE_PRESSURE_ID = 1
+    PATCH_PRESSURE_ID = 2
     
     def __init__(self, channelIDs, ports):
         self.defaultConfigure()
@@ -39,14 +42,26 @@ class PressureController:
         self.switch.write(msg) #b'pressure 4\n')
         return self.switch.readline()
     
+    def setAtmosphereMode(self, idx):
+        msg = bytes(('atm ' + str(idx) + ' \n'), 'utf-8')
+        self.switch.write(msg) #b'pressure 4\n')
+        return self.switch.readline()
+    
+    def setPressureMode(self, idx):
+        msg = bytes(('pressure ' + str(idx) + ' \n'), 'utf-8')
+        self.switch.write(msg) #b'pressure 4\n')
+        return self.switch.readline()
+    
+    def doBreakIn(self, idx, time):
+        msg = bytes(('breakin ' + str(idx) + ' ' + str(time) + ' \n'), 'utf-8')
+        self.switch.write(msg)
+        return self.switch
+    
     def setPressure(self, pressure, idx):
         register_value = self.convert_pressure_to_register_value(pressure, self.cal_slope[idx], self.cal_intercept[idx])
         print('Pressure Command: ', register_value)
         self.pressure_clients[idx].write_registers(address=self.convert_address(self.commandaddress), 
                                                    values=register_value, slave=self.serverID)        # set information in device
-        
-        time.sleep(0.1)
-        print(self.measurePressure(idx))
         
     def measurePressure(self, idx):
         result = self.pressure_clients[idx].read_holding_registers(address=self.convert_address(self.monitoraddress), 

@@ -1,7 +1,8 @@
 from Workbench import Workbench, arrayAverage
 from Machine import Machine
 import time
-
+import datetime
+import os
 
 class State(object):
     """
@@ -34,134 +35,124 @@ class State(object):
         """
         return self.__class__.__name__
 
-class EnterBathState(State):
-    ambientResistance = None 
-
-    def on_event(self, event):
-        if self.ambientResistance is None:
-            self.ambientResistance = arrayAverage(self.machine.resistanceHistory[-20:-1])
-            self.wb.moveManipulatorOnAxis(2, -12000, 1000, False)
-            return self 
-
-        newResistance = arrayAverage(self.machine.resistanceHistory[-6:-1])
-        print(newResistance)
-        if (newResistance < 0.01 * self.ambientResistance) or newResistance < 100:
-            self.wb.ps.stop()
-            print("Enter bath!, Stopping pipette!")
-            return EnterBathStateManipulator2(self.wb, self.machine)
-        
-        if self.wb.ps.getPos()[2] < -5000:
-            print("Abort")
-            raise ValueError("Abort")
-        elif self.wb.ps.getPos()[2] < 0:
-            self.wb.ps.setSpeed(500)
-        
-        if self.machine.resistanceHistory[-1] < 50: 
-            print("one value!")
-            time.sleep(1)
-        
-        return self
-    
-class EnterBathStateManipulator2(State):
-    ambientResistance = None 
-
-    def on_event(self, event):
-        if self.ambientResistance is None:
-            self.ambientResistance = arrayAverage(self.machine.resistance2History[-20:-1])
-            self.wb.moveManipulator2OnAxis(2, -12000, 1000, False)
-            return self 
-
-        newResistance = arrayAverage(self.machine.resistance2History[-6:-1])
-        print(newResistance)
-        if (newResistance < 0.01 * self.ambientResistance) or newResistance < 100:
-            self.wb.ps2.stop()
-            print("Enter bath!, Stopping pipette!")
-            return CaptureState(self.wb, self.machine)
-        
-        if self.wb.ps2.getPos()[2] < -5000:
-            print("Abort")
-            raise ValueError("Abort")
-        elif self.wb.ps2.getPos()[2] < 0:
-            self.wb.ps2.setSpeed(500)
-        
-        if self.machine.resistance2History[-1] < 50: 
-            print("one value!")
-            time.sleep(1)
-        
-        return self
-
 class CaptureState(State):
     configured = False
     suction = False
     init_time = None
 
     def on_event(self, event):
-        
+        self.machine.saveImage = True
+
         if self.init_time is None:
             self.init_time = time.perf_counter()
 
         if not self.configured: 
-            self.wb.pressureController.writeMessageSwitch(b"atm 1")
-            self.wb.pressureController.setPressure(200, 1)
-            self.wb.pressureController.writeMessageSwitch(b"pressure 1")
+            #self.wb.pressureController.setAtmosphereMode(1)
+            self.wb.pressureController.setPressure(400, self.wb.pressureController.CAPTURE_PRESSURE_ID)
+            self.wb.pressureController.setPressureMode(self.wb.pressureController.CAPTURE_PRESSURE_ID)
             self.configured = True
 
             return self
         
-        if time.perf_counter() - self.init_time > 30:
-        #    return HuntState(self.wb, self.machine) # TODO: Remove once user interaction wanted
-        #
-            #self.wb.pressureController.writeMessageSwitch(b"atm 1")
-            #self.wb.pressureController.setPressure(0, 1)
-           # return BlankState(self.wb, self.machine)
-
-            return SealState(self.wb, self.machine)
+        if time.perf_counter() - self.init_time > 12:
+            return MoveCapturedState(self.wb, self.machine)
             
-        elif time.perf_counter() - self.init_time > 2:
+        elif time.perf_counter() - self.init_time > 5:
             if not self.suction:
-                self.wb.pressureController.setPressure(-15, 1)
+                self.wb.pressureController.setPressure(-30, self.wb.pressureController.CAPTURE_PRESSURE_ID)
                 self.suction = True
 
                 return self
             else:
-                print("Resistance Average at Time ",  str(round(time.perf_counter() - self.init_time)), ":", arrayAverage(self.machine.resistance2History[-10:-1]))
+                print("Resistance Average at Time ",  str(round(time.perf_counter() - self.init_time)), ":", arrayAverage(self.machine.resistanceCaptureHistory[-10:-1]))
+        
         else:
-            print("Resistance Average at Time ",  str(round(time.perf_counter() - self.init_time)), ":", arrayAverage(self.machine.resistance2History[-10:-1]))
+            print("Resistance Average at Time ",  str(round(time.perf_counter() - self.init_time)), ":", arrayAverage(self.machine.resistanceCaptureHistory[-10:-1]))
           
         return self
     
-
-class HuntState(State):
-    baselineResistance = None
-    counter = 0
-    totalZMovement = 0 # ,
+class MoveCapturedState(State):
+    ps1Raised = False 
+    ps1PulledBack = False
+    ps1Hovering = False
+    ps1Lowering = False 
+    ps1Returning = False
+    initialPos1 = []
+    initialPos2 = []
 
     def on_event(self, event):
-        time.sleep(2)
-        return CleanState(self.wb, self.machine)
-        resistances = self.machine.resistanceHistory
+        self.machine.saveImage = True
 
-        if self.baselineResistance is None or self.counter < 10: 
-            self.baselineResistance = sum(resistances[-10:-1]) / len(resistances[-10:-1])  
-            self.counter += 1    
-        else:
-            self.wb.moveManipulatorOnAxis(2, -2, 10000, False)
-            self.totalZMovement += 2
-            newResistance = resistances[-1]
-            print(newResistance)
-            
-            if newResistance < 0.01 * self.baselineResistance:
-                self.wb.ps.stop()
-                print("Abort!")
-                #return AbortState(self.wb, self.machine)
-            elif newResistance > 1.3 * self.baselineResistance:
-                self.wb.ps.stop()
-                print("Seal")
-                raise ValueError("Cell found, Seal")
+        if len(self.initialPos1) < 1:
+            self.initialPos1 = self.wb.patchManipulator.getPos()
+            self.newPos11 = [self.initialPos1[0] + 100, self.initialPos1[1] + 100, self.initialPos1[2]]
+            self.newPos12 = [self.initialPos1[0], self.initialPos1[1] + 100, self.initialPos1[2]]
+            self.newPos13 = [self.initialPos1[0] - 100, self.initialPos1[1], self.initialPos1[2]]
+        if len(self.initialPos2) < 1:
+            self.initialPos2 = self.wb.captureManipulator.getPos()
+            self.newPos21 = [self.initialPos2[0] + 100, self.initialPos2[1] + 100, self.initialPos2[2]]
+            self.newPos22 = [self.initialPos2[0], self.initialPos2[1] + 100, self.initialPos2[2]]
+            self.newPos23 = [self.initialPos2[0] - 100, self.initialPos2[1], self.initialPos2[2]]
+        
+        if not self.ps1Raised:
+            if not self.wb.captureManipulator.isMoving():
+                self.wb.captureManipulator.moveTo(self.newPos21, 10)
+                self.ps1Raised = True
+        elif not self.ps1PulledBack: 
+            if not self.wb.captureManipulator.isMoving():
+                self.wb.captureManipulator.moveTo(self.newPos22, 10)
+                self.ps1PulledBack = True
+        elif not self.ps1Hovering:
+            if not self.wb.captureManipulator.isMoving():
+                self.wb.captureManipulator.moveTo(self.newPos23, 10)
+                self.ps1Hovering = True
+        elif not self.ps1Lowering:
+            if not self.wb.captureManipulator.isMoving():
+                self.ps1Lowering = True
+        elif not self.ps1Returning:
+            if not self.wb.captureManipulator.isMoving():
+                self.wb.captureManipulator.moveTo(self.initialPos2, 10)
+                self.ps1Returning = True
+        elif self.ps1Returning and (not self.wb.patchManipulator.isMoving() and not self.wb.captureManipulator.isMoving()):
+            # Returned, move back to CaptureState
+            return ReleaseState(self.wb, self.machine)
+        return self
+    
+class HuntState(State):
+    baselineResistance = None
+    configured = False
+    totalZMovement = 0 
+    countBetweenStateRuns = 0
+
+    def on_event(self, event):
+
+        if not self.configured:
+            self.wb.patchAmplifier.autoPipetteOffset()
+            self.configured = True
+            return self
+
+        resistances = self.machine.resistancePatchHistory
+        resistance = arrayAverage(resistances[-10:-1])
+
+        if self.baselineResistance is None and self.countBetweenStateRuns > 10: 
+            self.baselineResistance = resistance
+        elif self.baselineResistance is not None: 
+            if resistance < 0.8 * self.baselineResistance:
+                self.wb.patchManipulator.stop()
+                return AbortState(self.wb, self.machine)
+            elif resistance > 1.1 * self.baselineResistance:
+                self.wb.patchManipulator.stop()
                 return SealState(self.wb, self.machine)
-            elif self.totalZMovement > 10: # TODO: Made easier to trigger for testing
-                self.wb.ps.stop()
-                return CleanState(self.wb, self.machine)
+            elif self.totalZMovement > 50:
+                self.wb.patchManipulator.stop()
+                return CleanBothState(self.wb, self.machine)
+            elif not self.wb.patchManipulator.isMoving() and self.countBetweenStateRuns > 10:
+                self.wb.moveManipulatorOnAxis(2, -1, 100, False)
+                self.totalZMovement += 1
+                self.countBetweenStateRuns = 0
+
+        print(resistance)
+        self.countBetweenStateRuns += 1
 
         return self
     
@@ -171,484 +162,325 @@ class SealState(State):
     suction = False
 
     def on_event(self, event):
-        if self.init_time is None:
-            self.init_time = time.perf_counter()
-
         if not self.configured: 
-            self.wb.pressureController.writeMessageSwitch(b"atmosphere 2")
-            self.wb.pressureController.setPressure(15, 2)
-            self.wb.pressureController.writeMessageSwitch(b"pressure 2")
-            self.configured = True
+            self.configure()
 
             return self
         
-        resistances = self.machine.resistanceHistory
-
-        print("Resistance Average at Time ",  str(round(time.perf_counter() - self.init_time)), ":", arrayAverage(resistances[-10:-1]))
+        resistances = self.machine.resistancePatchHistory
+        resistance = arrayAverage(resistances[-10:-1])
         
-        if time.perf_counter() - self.init_time > 5:
-            if not self.suction:
-                self.wb.pressureController.setPressure(-20, 2)
-                self.wb.pressureController.writeMessageSwitch(b"pressure 2")
-                self.suction = True
-                self.init_time = time.perf_counter() # restart timer
-
-                return self
-            
+        if resistance > 1000: 
+            return BreakInState(self.wb, self.machine)
         
-        elif time.perf_counter() - self.init_time > 180:
-            
-            self.wb.pressureController.writeMessageSwitch(b"atm 2")
-            self.wb.pressureController.setPressure(0, 2)
-            self.wb.pressureController.writeMessageSwitch(b"atm 1")
-            self.wb.pressureController.setPressure(0, 1)
-            return BlankState(self.wb, self.machine)
-            #else: 
-            #    newResistance = resistances[-1]
-            #    if newResistance > 1e3: 
-            #        return BreakInState(self.wb, self.machine)
-            #    elif time.perf_counter() - self.init_time > 20:
-            #        return CleanState(self.wb, self.machine)
+        if not self.suction and time.perf_counter() - self.init_time > 5:
+            self.wb.pressureController.setPressureMode(self.wb.pressureController.PATCH_PRESSURE_ID)
+            self.suction = True
+            self.init_time = time.perf_counter() # restart timer
+
+            return self
+                
+        if self.suction and time.perf_counter() - self.init_time > 20:
+            return CleanBothState(self.wb, self.machine)
 
         return self
+    
+    def configure(self): 
+        self.init_time = time.perf_counter()
+        self.wb.pressureController.setAtmosphereMode(2)
+        self.wb.pressureController.setPressure(-15, self.wb.pressureController.PATCH_PRESSURE_ID)
+        self.wb.patchAmplifier.setHolding(None, -70e-3)
+        self.wb.captureAmplifier.setHolding(None, 0)
+        self.configured = True
     
 class BreakInState(State):
     
     configured = False
-    pressureSet = False
     init_time = None
+    breakin_time_ms = 50
+    BREAKIN_INCREMENT = 50
     attempts = 0
 
     def on_event(self, event):
 
-        if self.configured == False:
+        if not self.configured:
             self.init_time = time.perf_counter()
-            #self.wb.pressureController.writeMessageSwitch("atmosphere 1")
+            self.wb.pressureController.setAtmosphereMode(self.wb.pressureController.PATCH_PRESSURE_ID)
+            self.wb.pressureController.setPressure(-600, self.wb.pressureController.PATCH_PRESSURE_ID)
+            self.wb.patchAmplifier.autoCapComp()
             self.configured = True
 
             return self
 
         if time.perf_counter - self.init_time > 1:
-            if not self.pressureSet:
-                #self.wb.pressureController.setPressure(-600, 1)
-                self.pressureSet = True
-                return self
+           
+            self.wb.pressureController.doBreakIn(self.wb.pressureController.PATCH_PRESSURE_ID, self.breakin_time_ms)
+            self.breakin_time_ms += self.BREAKIN_INCREMENT
+            self.init_time = time.perf_counter()
             
-            #self.wb.pressureController.writeMessageSwitch('breakin 1 300')
-            #newResistance = self.wb.measureResistance(60)
-            
-            #transient_present = self.wb.measureTransient(60)
-
-            newResistance = self.machine.resistanceHistory[-1]
-            transient_present = self.machine.transientHistory[-1]
+            #resistances = self.machine.resistanceHistory
+            transient_present = self.machine.transientPatchHistory[-1]
 
             # Measure transient!
             if transient_present:
-                return WholeCellState(self.wb, self.machine)
+                return MeasuringRestingPotentialState(self.wb, self.machine)
             elif self.attempts > 10:
-                return CleanState(self.wb, self.machine)
-            else: 
-                attempts += 1
+                return CleanBothState(self.wb, self.machine)
+            
+            self.attempts += 1
 
         return self
     
-class WholeCellState(State):
+class MeasuringRestingPotentialState(State):
 
     counter = 0
-    measuredBaseResistance = False
+    configured = False
 
     def on_event(self, event):
-        if not self.measuredBaseResistance: 
-            self.wb.currentClamp()
+        if not self.configured:
+            self.configure() 
+            
+            return self
+                
+        self.machine.saveImage = True 
+
+        voltage_patch = self.machine.voltage_patch
+        current_patch = self.machine.current_patch
+
+        for i in range(len(voltage_patch)):
+            self.voltageFile.write(str(round(voltage_patch[i] * 1e3, 4)) + ',' +  str(round(current_patch[i] * 1e12, 4)) + '\n')
+
+        if self.counter >= 9:
+            self.voltageFile.close()
+            return MeasuringdFOverF(self.wb, self.machine)
+        else:
+            self.counter += 1
 
         return self
     
-class CleanState(State):
+    def configure(self):
+        patchPipetteOffset = self.wb.patchAmplifier.getParam('PipetteOffset')
+        capturePipetteOffset = self.wb.captureAmplifier.getParam('PipetteOffset')
+        self.machine.stopAcquiringData()
+
+        self.wb.currentClamp(1)
+        self.wb.currentClamp(2)
+        self.wb.patchAmplifier.setParam('PipetteOffset', patchPipetteOffset)
+        self.wb.captureAmplifier.setParam('PipetteOffset', capturePipetteOffset)
+
+        self.machine.readCurrentPulses()
+
+        self.wb.lightsOn()
+
+        cellDir = self.machine.experimentDir + "Cell_" + str(len(next(os.walk('dir_name'))[1]) - 1) + "/"
+        if not os.path.exists(cellDir):
+            os.makedirs(cellDir)
+            self.machine.wholeCellDir = cellDir
+        
+        voltageFilePath = cellDir + 'RestingMembranePotential.txt'
+        self.voltageFile = open(voltageFilePath, 'w')
+
+        self.configured = True
+
+class MeasuringdFOverF(State):
+
+    counter = 0
+    configured = False
+    holdingValues = [-70e-3, -70e-3, -110e-3, -70e-3, -90e-3, -70e-3, -70e-3, -50e-3, -70e-3, -30e-3, 
+                     -70e-3, -10e-3, -70e-3, 0e-3, -70e-3, 10e-3, -70e-3, 30e-3, -70e-3, 50e-3, -70e-3]
+    currentHoldingValueIdx = 0
+
+    def on_event(self, event):
+        if not self.configured:
+            self.configure() 
+            
+            return self
+                
+        self.machine.saveImage = True
+
+        voltage_patch = self.machine.voltage_patch
+        current_patch = self.machine.current_patch
+
+        for i in range(len(voltage_patch)):
+            self.voltageFile.write(str(round(voltage_patch[i] * 1e3, 4)) + ',' +  
+                                   str(round(current_patch[i] * 1e12, 4 + ',' + str(round(self.holdingValues[self.currentHoldingValueIdx]), 4))) + '\n')
+
+        self.counter += 1
+
+        if self.counter >= 3:
+            if self.currentHoldingValueIdx == len(self.holdingValues) - 1:
+                self.voltageFile.close()
+                self.machine.stopAcquiringData()
+                self.machine.streamVoltagePulses()
+                return ReleaseState(self.wb, self.machine)
+            else:
+                self.currentHoldingValueIdx += 1
+                self.wb.patchAmplifier.setParam('Holding', self.holdingValues[self.currentHoldingValueIdx])
+                self.counter = 0
+            
+        return self
+    
+    def configure(self):
+        self.machine.stopAcquiringData()
+        
+        self.wb.voltageClamp(1)
+        self.wb.voltageClamp(2)
+
+        self.wb.patchAmplifier.setParam('Holding', -70e-3)
+        self.wb.captureAmplifier.setParam('Holding', 0)
+
+        self.machine.readVoltagePulses()
+
+        self.wb.lightsOn()
+
+        cellDir = self.machine.wholeCellDir
+        
+        voltageFilePath = cellDir + 'dfOverFVoltageClamp.csv'
+        self.voltageFile = open(voltageFilePath, 'w')
+
+        self.configured = True
+
+class ReleaseState(State):
+
+    start_time = None
+
+    def on_event(self, event):
+        if self.start_time is None:
+            self.start_time = time.perf_counter()
+            self.wb.moveManipulator2OnAxis(0, -20, 10, False)
+            self.wb.moveManipulatorOnAxis(0, -20, 10, False)
+            self.wb.pressureController.setAtmosphereMode(self.wb.pressureController.CAPTURE_PRESSURE_ID)
+            self.wb.pressureController.setPressure(300, self.wb.pressureController.CAPTURE_PRESSURE_ID)
+            self.wb.pressureController.setPressureMode(self.wb.pressureController.CAPTURE_PRESSURE_ID)
+            self.wb.pressureController.setAtmosphereMode(self.wb.pressureController.PATCH_PRESSURE_ID)
+            self.wb.pressureController.setPressure(300, self.wb.pressureController.PATCH_PRESSURE_ID)
+            self.wb.pressureController.setPressureMode(self.wb.pressureController.PATCH_PRESSURE_ID)
+
+        if time.perf_counter() - self.start_time > 5:
+            return CleanBothState(self.wb, self.machine)
+        
+        return self
+    
+class CleanBothState(State):
     ps1Raised = False 
     ps1PulledBack = False
+    ps1Dropped = False
     ps1Hovering = False
+    ps1MovingOver = False
     ps1Lowering = False 
     ps1Returning = False
+
     cleaned = False
     clean_start_time = None
     period_start_time = None
     cycles = 0
+
     pressure1_set = False
     pressure2_set = False
-    runs = 0
+
     initialPos1 = []
     initialPos2 = []
 
+    # TODO: CALIBRATE LOCATIONS FOR CLEAN WITH THESE CONSTANTS:
+    # LOCATIONS CAN BE FOUND IN LINLAB
+
+    PS1_TOP_Z = 6000
+    PS2_TOP_Z = 8000
+    PS1_BATH_Z = -5500
+    PS2_BATH_Z = -1500 
+    PS1_CENTER_X = None # determined by get pos, -2372.0
+    PS2_CENTER_X = None # determined by get pos, -5086.7
+    PS1_CLEAN_X = 18000
+    PS2_CLEAN_X = 11500
+
     def on_event(self, event):
         if len(self.initialPos1) < 1:
-            print('fire')
-            self.initialPos1 = self.wb.ps.getPos()
+            self.initialPos1 = self.wb.patchManipulator.getPos()
+            self.PS1_CENTER_X = self.initialPos1[0]
         if len(self.initialPos2) < 1:
-            self.initialPos2 = self.wb.ps2.getPos()
+            self.initialPos2 = self.wb.captureManipulator.getPos()
+            self.PS2_CENTER_X = self.initialPos2[0]
 
         print(self.initialPos1)
         print(self.initialPos2)
-
+        # TODO: INITIAL POS IN MACHINE
         if not self.ps1Raised:
-            dist_to_top = self.wb.ps.getLimits()[2][1] - self.wb.ps.getPos()[2]
-            dist_to_top_2 = self.wb.ps2.getLimits()[2][1] - self.wb.ps2.getPos()[2]
-            self.wb.moveManipulatorOnAxis(2, dist_to_top, 1500, False)
-            self.wb.moveManipulator2OnAxis(2, dist_to_top_2, 1500, False)
+            self.wb.pressureController.setPressure(200, self.wb.pressureController.PATCH_PRESSURE_ID)
+            self.wb.pressureController.setPressure(200, self.wb.pressureController.CAPTURE_PRESSURE_ID)
+            self.wb.pressureController.setPressureMode(self.wb.pressureController.CAPTURE_PRESSURE_ID)
+            self.wb.pressureController.setPressureMode(self.wb.pressureController.PATCH_PRESSURE_ID)
+
+            self.wb.patchManipulator.moveTo([None, None, self.PS1_TOP_Z], 10000)
+            self.wb.captureManipulator.moveTo([None, None, self.PS2_TOP_Z], 10000)
             self.ps1Raised = True
         elif not self.ps1PulledBack: 
-            if not self.wb.ps.isMoving() and not self.wb.ps2.isMoving():
-                dist_to_back = self.wb.ps.getLimits()[0][1] - self.wb.ps.getPos()[0]
-                dist_to_back_2 = self.wb.ps2.getLimits()[0][1] - self.wb.ps2.getPos()[0]
-                self.wb.moveManipulatorOnAxis(0, dist_to_back, 2000, False)
-                self.wb.moveManipulator2OnAxis(0, dist_to_back_2, 2000, False)
+            if not self.wb.patchManipulator.isMoving() and not self.wb.captureManipulator.isMoving():
+                self.wb.patchManipulator.moveTo([self.PS1_CLEAN_X, None, None], 15000)
+                self.wb.captureManipulator.moveTo([self.PS2_CLEAN_X, None, None], 15000)
                 self.ps1PulledBack = True
+        elif not self.ps1Dropped:
+            if not self.wb.patchManipulator.isMoving() and not self.wb.captureManipulator.isMoving():    
+                self.wb.patchManipulator.moveTo([None, None, self.PS1_BATH_Z], 10000)
+                self.wb.captureManipulator.moveTo([None, None, self.PS2_BATH_Z], 10000)
+                self.ps1Dropped = True
         elif not self.cleaned: 
-            if not self.wb.ps.isMoving() and not self.wb.ps2.isMoving():
+            if not self.wb.patchManipulator.isMoving() and not self.wb.captureManipulator.isMoving():
                 # Run clean step
-                current_time = time.perf_counter()
-
                 current_time = time.perf_counter()
 
                 if self.clean_start_time is None:
                     self.clean_start_time = current_time
                     self.period_start_time = current_time
-                    self.wb.pressureController.writeMessageSwitch(b"atm 1")
-                    self.wb.pressureController.setPressure(500, 1)
-                    self.wb.pressureController.writeMessageSwitch(b"pressure 1")
+                    self.wb.pressureController.setAtmosphereMode(self.wb.pressureController.CAPTURE_PRESSURE_ID)
+                    self.wb.pressureController.setAtmosphereMode(self.wb.pressureController.PATCH_PRESSURE_ID)
+                    self.wb.pressureController.setPressure(500, self.wb.pressureController.CAPTURE_PRESSURE_ID)
+                    self.wb.pressureController.setPressure(500, self.wb.pressureController.PATCH_PRESSURE_ID)
+                    self.wb.pressureController.setPressureMode(self.wb.pressureController.CAPTURE_PRESSURE_ID)
+                    self.wb.pressureController.setPressureMode(self.wb.pressureController.PATCH_PRESSURE_ID)
                 elif self.cycles > 5:
                     self.cleaned = True
-                    self.wb.pressureController.writeMessageSwitch(b'atm 1')
-                    self.wb.pressureController.setPressure(0, 1)
+                    self.wb.pressureController.setPressure(200, self.wb.pressureController.CAPTURE_PRESSURE_ID)
+                    self.wb.pressureController.setPressure(200, self.wb.pressureController.PATCH_PRESSURE_ID)
                     return self
                 # Clean the pipette
                 
-                # Pos pressure for 2 sec , negative for 1 sec, at +500mbar -500mbar
+                    # Pos pressure for 2 sec , negative for 1 sec, at +500mbar -500mbar
                 if current_time - self.period_start_time >= 3:
                     if self.pressure2_set == False:
-                        self.wb.pressureController.setPressure(500, 1)
+                        self.wb.pressureController.setPressure(500, self.wb.pressureController.CAPTURE_PRESSURE_ID)
+                        self.wb.pressureController.setPressure(500, self.wb.pressureController.PATCH_PRESSURE_ID)
                         self.period_start_time = current_time
                         self.cycles += 1
                         self.pressure2_set = True
                         self.pressure1_set = False
                 elif current_time - self.period_start_time >= 2:
                     if self.pressure1_set == False:
-                        self.wb.pressureController.setPressure(-500, 1)
+                        self.wb.pressureController.setPressure(-500, self.wb.pressureController.CAPTURE_PRESSURE_ID)
+                        self.wb.pressureController.setPressure(-500, self.wb.pressureController.PATCH_PRESSURE_ID)
                         self.pressure1_set = True
                         self.pressure2_set = False
         elif not self.ps1Hovering:
-            if not self.wb.ps.isMoving() and not self.wb.ps2.isMoving():
-                self.wb.ps.moveTo(self.initialPos1, 2000)
-                self.wb.ps2.moveTo(self.initialPos2, 2000)
+            if not self.wb.patchManipulator.isMoving() and not self.wb.captureManipulator.isMoving():
+                self.wb.patchManipulator.moveTo([None, None, self.PS1_TOP_Z], 10000)
+                self.wb.captureManipulator.moveTo([None, None, self.PS2_TOP_Z], 10000)
                 self.ps1Hovering = True
-        elif self.ps1Hovering and (not self.wb.ps.isMoving() and not self.wb.ps2.isMoving()):
-            # Returned, move back to CaptureState
-            if self.runs >= 500:
-                self.machine.__del__()
-                
-                return None
-            else:
-                self.machine.saveImage = True
-                self.ps1Raised = False 
-                self.ps1PulledBack = False
-                self.ps1Hovering = False
-                self.ps1Lowering = False 
-                self.cleaned = False
-                self.clean_start_time = None
-                self.period_start_time = None
-                self.cycles = 0
-                self.pressure1_set = False
-                self.pressure2_set = False
-                self.runs += 1
-        return self
-
-class CleanTestState(State):
-    ps1Raised = False 
-    ps1PulledBack = False
-    ps1Hovering = False
-    ps1Lowering = False 
-    cleaned = False
-    clean_start_time = None
-    period_start_time = None
-    cycles = 0
-    pressure1_set = False
-    pressure2_set = False
-
-    def on_event(self, event):
-        if not self.ps1Raised:
-            self.wb.moveManipulatorOnAxis(2, 10000, 15000, False)
-            self.ps1Raised = True
-        elif not self.ps1PulledBack: 
-            if not self.wb.ps.isMoving():
-                self.wb.moveManipulatorOnAxis(0, 20000, 20000, False)
-                self.ps1PulledBack = True
-        elif not self.cleaned: 
-            if not self.wb.ps.isMoving():
-                # Run clean step
-                current_time = time.perf_counter()
-
-                if self.clean_start_time is None:
-                    self.clean_start_time = current_time
-                    self.period_start_time = current_time
-                    self.wb.pressureController.writeMessageSwitch(b"atm 1")
-                    self.wb.pressureController.setPressure(500, 1)
-                    self.wb.pressureController.writeMessageSwitch(b"pressure 1")
-                elif self.cycles > 5:
-                    self.cleaned = True
-                    self.wb.pressureController.writeMessageSwitch(b'atm 1')
-                    self.wb.pressureController.setPressure(0, 1)
-                    return self
-                # Clean the pipette
-                
-                # Pos pressure for 2 sec , negative for 1 sec, at +500mbar -500mbar
-                if current_time - self.period_start_time >= 3:
-                    if self.pressure2_set == False:
-                        self.wb.pressureController.setPressure(500, 1)
-                        self.period_start_time = current_time
-                        self.cycles += 1
-                        self.pressure2_set = True
-                        self.pressure1_set = False
-                elif current_time - self.period_start_time >= 2:
-                    if self.pressure1_set == False:
-                        self.wb.pressureController.setPressure(-500, 1)
-                        self.pressure1_set = True
-                        self.pressure2_set = False
-        elif not self.ps1Hovering:
-            self.wb.moveManipulatorOnAxis(0, -20000, 20000, False)
-            self.ps1Hovering = True
+        elif not self.ps1MovingOver:
+            if not self.wb.patchManipulator.isMoving() and not self.wb.captureManipulator.isMoving():
+                self.wb.patchManipulator.moveTo([self.PS1_CENTER_X, None, None], 15000)
+                self.wb.captureManipulator.moveTo([self.PS2_CENTER_X, None, None], 15000)
+                self.ps1MovingOver = True
         elif not self.ps1Lowering:
-            if not self.wb.ps.isMoving():
-                self.wb.moveManipulatorOnAxis(2, -10000, 10000, False)
+            if not self.wb.patchManipulator.isMoving() and not self.wb.captureManipulator.isMoving():
+                self.wb.patchManipulator.moveTo(self.initialPos1, 5000)
+                self.wb.captureManipulator.moveTo(self.initialPos2, 5000)
                 self.ps1Lowering = True
-        elif self.ps1Lowering and (not self.wb.ps.isMoving() or arrayAverage(self.machine.resistanceHistory[-5:-1]) < 50):
-            # Returned, move back to CaptureState
-            if self.wb.ps.isMoving():
-                self.wb.ps.stop() 
+        elif not self.ps1Returning and (not self.wb.patchManipulator.isMoving() and not self.wb.captureManipulator.isMoving()):
             return CaptureState(self.wb, self.machine)
-
         return self
     
 class AbortState(State):
     def on_event(self, event):
+        self.machine.__del__()
         self.wb.__del__()
 
         return None
-    
-class PressureTestState(State):
-    clean_start_time = None
-    period_start_time = None
-    cycles = 0
-    pressure1_set = False
-    pressure2_set = False
-
-    def on_event(self, event):
-                # Run clean step
-        current_time = time.perf_counter()
-
-        if self.clean_start_time is None:
-            self.clean_start_time = current_time
-            self.period_start_time = current_time
-            self.wb.pressureController.writeMessageSwitch(b"atm 2")
-            self.wb.pressureController.setPressure(500, 2)
-            self.wb.pressureController.writeMessageSwitch(b"pressure 2")
-        elif self.cycles > 20:
-            self.wb.pressureController.writeMessageSwitch(b'atm 2')
-            self.wb.pressureController.setPressure(0, 2)
-            return None
-        # Clean the pipette
-        
-        print(self.wb.measurePressure(2))
-        # Pos pressure for 2 sec , negative for 1 sec, at +500mbar -500mbar
-        if current_time - self.period_start_time >= 3:
-            print("hallo")
-            if self.pressure2_set == False:
-                self.wb.pressureController.setPressure(500, 2)
-                self.period_start_time = current_time
-                self.cycles += 1
-                self.pressure2_set = True
-                self.pressure1_set = False
-        elif current_time - self.period_start_time >= 2:
-            if self.pressure1_set == False:
-                self.wb.pressureController.setPressure(-500, 2)
-                self.pressure1_set = True
-                self.pressure2_set = False
-
-        return self
-
-class LightsTestState(State):
-
-    def on_event(self, event):
-        self.wb.lightsOn()
-        time.sleep(2)
-        self.wb.lightsOff()
-        time.sleep(2)
-
-        return self
-    
-class BlankState(State):
-    def on_event(self, event):
-        
-        return self
-    
-class ManipulatorTestState(State):
-    ps1Raised = False 
-    ps1PulledBack = False
-    ps1Hovering = False
-    ps1Lowering = False 
-    ps1Returning = False
-    cleaned = False
-    clean_start_time = None
-    period_start_time = None
-    cycles = 0
-    pressure1_set = False
-    pressure2_set = False
-    runs = 0
-    initialPos1 = []
-    initialPos2 = []
-
-    def on_event(self, event):
-        if len(self.initialPos1) < 1:
-            self.initialPos1 = self.wb.ps.getPos()
-            self.newPos11 = [self.initialPos1[0] + 2000, self.initialPos1[1], self.initialPos1[2] + 1000]
-            self.newPos12 = [self.initialPos1[0], self.initialPos1[1] + 2000, self.initialPos1[2]]
-            self.newPos13 = [self.initialPos1[0] - 50, self.initialPos1[1] + 2000, self.initialPos1[2] + 50]
-        if len(self.initialPos2) < 1:
-            self.initialPos2 = self.wb.ps2.getPos()
-            self.newPos21 = [self.initialPos2[0] + 2000, self.initialPos2[1], self.initialPos2[2] + 1000]
-            self.newPos22 = [self.initialPos2[0], self.initialPos2[1] + 2000, self.initialPos2[2]]
-            self.newPos23 = [self.initialPos2[0] - 50, self.initialPos2[1] + 2000, self.initialPos2[2] + 50]
-
-        
-        if not self.ps1Raised:
-            self.wb.ps.moveTo(self.newPos11, 1000)
-            self.wb.ps2.moveTo(self.newPos21, 1000)
-
-            self.ps1Raised = True
-        elif not self.ps1PulledBack: 
-            if not self.wb.ps.isMoving() and not self.wb.ps2.isMoving():
-                self.wb.ps.moveTo(self.newPos12, 1000)
-                self.wb.ps2.moveTo(self.newPos22, 1000)
-                self.ps1PulledBack = True
-        elif not self.cleaned: 
-            if not self.wb.ps.isMoving() and not self.wb.ps2.isMoving():
-                self.wb.moveManipulatorOnAxis(1, -10, 1000, False)
-                self.wb.moveManipulator2OnAxis(1, -10, 1000, False)
-                
-                if self.cycles > 10:
-                    self.cleaned = True
-                    return self
-                self.cycles += 1
-        elif not self.ps1Hovering:
-            if not self.wb.ps.isMoving() and not self.wb.ps2.isMoving():
-                self.wb.ps.moveTo(self.newPos13, 1000)
-                self.wb.ps2.moveTo(self.newPos23, 1000)
-                self.ps1Hovering = True
-        elif not self.ps1Lowering:
-            if not self.wb.ps.isMoving() and not self.wb.ps2.isMoving():
-                self.ps1Lowering = True
-        elif not self.ps1Returning:
-            if not self.wb.ps.isMoving() and not self.wb.ps2.isMoving():
-                self.wb.ps.moveTo(self.initialPos1)
-                self.wb.ps2.moveTo(self.initialPos2)
-                self.ps1Returning = True
-        elif self.ps1Returning and (not self.wb.ps.isMoving() and not self.wb.ps2.isMoving()):
-            # Returned, move back to CaptureState
-            if self.runs >= 1000:
-                self.machine.__del__()
-                
-                return None
-            else:
-                self.machine.saveImage = True
-                self.ps1Raised = False 
-                self.ps1PulledBack = False
-                self.ps1Hovering = False
-                self.ps1Lowering = False 
-                self.cleaned = False
-                self.clean_start_time = None
-                self.period_start_time = None
-                self.cycles = 0
-                self.pressure1_set = False
-                self.pressure2_set = False
-                self.runs += 1
-        return self
-    
-class ManipulatorAbsoluteTestState(State):
-    ps1Raised = False 
-    ps1PulledBack = False
-    ps1Hovering = False
-    ps1Lowering = False 
-    ps1Returning = False
-    cleaned = False
-    clean_start_time = None
-    period_start_time = None
-    cycles = 0
-    pressure1_set = False
-    pressure2_set = False
-    runs = 0
-    initialPos1 = []
-    initialPos2 = []
-
-    def on_event(self, event):
-        if len(self.initialPos1) < 1:
-            print('fire')
-            self.initialPos1 = self.wb.ps.getPos()
-        if len(self.initialPos2) < 1:
-            self.initialPos2 = self.wb.ps2.getPos()
-
-        print(self.initialPos1)
-        print(self.initialPos2)
-
-        if not self.ps1Raised:
-            self.wb.moveManipulatorOnAxis(2, 1000, 1500, False)
-            self.wb.moveManipulator2OnAxis(2, 1000, 1500, False)
-            self.ps1Raised = True
-        elif not self.ps1PulledBack: 
-            if not self.wb.ps.isMoving() and not self.wb.ps2.isMoving():
-                self.wb.moveManipulatorOnAxis(0, 2000, 2000, False)
-                self.wb.moveManipulator2OnAxis(0, 2000, 2000, False)
-                self.ps1PulledBack = True
-        elif not self.cleaned: 
-            if not self.wb.ps.isMoving() and not self.wb.ps2.isMoving():
-                # Run clean step
-                current_time = time.perf_counter()
-
-                if self.clean_start_time is None:
-                    self.clean_start_time = current_time
-                    self.period_start_time = current_time
-
-                    self.wb.moveManipulatorOnAxis(1, 1000, 2000, False)
-                    self.wb.moveManipulator2OnAxis(1, -1000, 2000, False)
-                elif self.cycles > 10:
-                    self.cleaned = True
-                    return self
-                self.cycles += 1
-        elif not self.ps1Hovering:
-            if not self.wb.ps.isMoving() and not self.wb.ps2.isMoving():
-                self.wb.ps.moveTo(self.initialPos1, 2000)
-                self.wb.ps2.moveTo(self.initialPos2, 2000)
-                self.ps1Hovering = True
-        elif self.ps1Hovering and (not self.wb.ps.isMoving() and not self.wb.ps2.isMoving()):
-            # Returned, move back to CaptureState
-            if self.runs >= 500:
-                self.machine.__del__()
-                
-                return None
-            else:
-                self.machine.saveImage = True
-                self.ps1Raised = False 
-                self.ps1PulledBack = False
-                self.ps1Hovering = False
-                self.ps1Lowering = False 
-                self.cleaned = False
-                self.clean_start_time = None
-                self.period_start_time = None
-                self.cycles = 0
-                self.pressure1_set = False
-                self.pressure2_set = False
-                self.runs += 1
-        return self
-    
-#Move [5502.3, -5465.0, 2509.4] => [None, None, 3009.4]
-#Move [10468.0, -1411.0, 3102.1] => [None, None, 3602.1]
-
-#Move [5016.6, -8516.4, -4252.2] => [None, None, -3752.2]
-#Move [11986.6, 1767.4, -3517.1] => [None, None, -3017.1]
