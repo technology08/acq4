@@ -52,6 +52,9 @@ class CaptureState(State):
             self.wb.pressureController.setPressureMode(self.wb.pressureController.CAPTURE_PRESSURE_ID)
             self.configured = True
 
+            self.machine.patchInitialPos = self.wb.patchManipulator.getPos()
+            self.machine.captureInitialPos = self.wb.captureManipulator.getPos()
+
             return self
         
         if time.perf_counter() - self.init_time > 12:
@@ -394,12 +397,18 @@ class CleanBothState(State):
     PS2_CLEAN_X = 11500
 
     def on_event(self, event):
-        if len(self.initialPos1) < 1:
+        if self.machine.patchInitialPos is None:
             self.initialPos1 = self.wb.patchManipulator.getPos()
-            self.PS1_CENTER_X = self.initialPos1[0]
-        if len(self.initialPos2) < 1:
+        else:
+            self.initialPos1 = self.machine.patchInitialPos
+            
+        if self.machine.captureInitialPos is None:
             self.initialPos2 = self.wb.captureManipulator.getPos()
-            self.PS2_CENTER_X = self.initialPos2[0]
+        else: 
+            self.initialPos2 = self.machine.captureInitialPos
+
+        self.PS1_CENTER_X = self.initialPos1[0]
+        self.PS2_CENTER_X = self.initialPos2[0]
 
         print(self.initialPos1)
         print(self.initialPos2)

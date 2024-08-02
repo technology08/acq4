@@ -47,6 +47,8 @@ class Machine(object):
         self.data_queue = queue.Queue(100)
         self.streamVoltagePulses()
         self.configurePlot()
+        self.captureInitialPos = None
+        self.patchInitialPos = None
 
     def __del__(self):
         self.wb.pressureController.writeMessageSwitch(b'atm 1')
